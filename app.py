@@ -198,7 +198,7 @@ if os.path.exists(banner_file):
 else:
     st.warning(f"⚠️ Chưa tìm thấy file '{banner_file}'. Vui lòng copy file ảnh vào cùng thư mục với app.py")
 
-st.markdown("<h2 style='text-align: center; color: #0068C9;'>CÔNG CỤ TÍNH TOÁN ẤN ĐỊNH TẦN SỐ MẠNG DÙNG RIÊNG</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center; color: #0068C9;'>CÔNG CỤ ẤN ĐỊNH TẦN SỐ MẠNG DÙNG RIÊNG</h2>", unsafe_allow_html=True)
 
 # Hiển thị phiên bản nhỏ gọn, bên phải dưới tiêu đề
 st.markdown(f"<div style='text-align: right; color: #666; font-size:0.85rem; margin-top:-8px;'>Phiên bản: {APP_VERSION}</div>", unsafe_allow_html=True)
@@ -440,3 +440,4 @@ if st.session_state.results is not None:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
+
