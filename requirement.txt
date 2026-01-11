@@ -1,6 +1,0 @@
-streamlit
-pandas
-numpy
-geopy
-openpyxl
-xlrd
