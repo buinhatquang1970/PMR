@@ -3,11 +3,26 @@ import streamlit.components.v1 as components
 import pandas as pd
 import io
 import os
+import html
+import logging
 from datetime import datetime
 from tool_tinh_toan import ToolAnDinhTanSo
 
+# Setup logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# CẤU HÌNH PHIÊN BẢN (BẠN CẬP NHẬT Ở ĐÂY)
+# =============================================================================
+APP_VERSION = "1.0"  # <--- Thay đổi số này khi bạn cập nhật phần mềm (VD: 1.1, 1.2...)
+
 # --- CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title="Công cụ Ấn định Tần số cho mạng dùng riêng", layout="wide")
+st.set_page_config(page_title=f"Công cụ Ấn định Tần số (v{APP_VERSION})", layout="wide")
+
+# --- HẠN CHẾ KÍCH THƯỚC UPLOAD (MB) ---
+MAX_UPLOAD_MB = 50
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 # --- KHỞI TẠO BỘ NHỚ ĐỆM ---
 if 'results' not in st.session_state:
@@ -24,16 +39,23 @@ st.markdown("""
         header[data-testid="stHeader"] {
             display: none;
         }
-        
-        /* --- 2. ĐẨY NỘI DUNG SÁT LÊN TRÊN --- */
+
+        /* --- ĐẨY NỘI DUNG SÁT LÊN TRÊN --- */
         .block-container {
             padding-top: 0rem !important; 
             padding-bottom: 2rem;
         }
-        
+
         h2 {
             margin-top: 0.5rem;
-            margin-bottom: 0.2rem !important;
+            margin-bottom: 0rem !important;
+        }
+        .version-text {
+            text-align: center;
+            color: #888;
+            font-size: 0.8rem;
+            margin-bottom: 1rem;
+            font-style: italic;
         }
         div[data-testid="stMarkdownContainer"] > p {
             margin-bottom: -3px !important;
@@ -55,7 +77,7 @@ st.markdown("""
             padding-top: 0.2rem !important;
             padding-bottom: 0.2rem !important;
         }
-        
+
         /* --- CSS TỐI ƯU KHUNG UPLOAD --- */
         [data-testid='stFileUploader'] {
             height: 65px !important; 
@@ -79,7 +101,7 @@ st.markdown("""
         [data-testid='stFileUploader'] section small {
             display: none;
         }
-        
+
         /* CSS cho nút Google Maps */
         div[data-testid="stColumn"] button[kind="secondary"] {
             color: #d93025 !important;
@@ -94,13 +116,13 @@ st.markdown("""
             border-color: #d93025 !important;
             color: #d93025 !important;
         }
-        
+
         /* CSS nút Tính toán */
         button[kind="primary"] {
             font-weight: bold !important;
             margin-top: 5px; 
         }
-        
+
         /* --- CSS SỬA LỖI BẢNG KẾT QUẢ BỊ CO --- */
         div[data-testid="stTable"] table {
             width: 100% !important; 
@@ -137,6 +159,31 @@ st.markdown("""
             display: flex;
             flex-direction: column;
         }
+
+        /* --- FIX: tránh selectbox bị truncate --- */
+        div[data-testid="stSelectbox"] > div,
+        div[data-testid="stSelectbox"] button,
+        div[data-testid="stSelectbox"] select {
+            min-width: 120px !important;
+            max-width: 320px !important;
+            white-space: nowrap !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+            display: inline-block !important;
+        }
+        div[role="combobox"] > div,
+        div[role="combobox"] button,
+        div[role="combobox"] select {
+            min-width: 120px !important;
+            max-width: 320px !important;
+            white-space: nowrap !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+            display: inline-block !important;
+        }
+        .stTextInput, .stSelectbox, .stNumberInput, .stDateInput {
+            min-width: 80px !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -144,43 +191,44 @@ st.markdown("""
 def dms_to_decimal(d, m, s):
     return d + (m / 60.0) + (s / 3600.0)
 
+# --- HÀM NEUTRALIZE DỮ LIỆU TRƯỚC KHI GHI EXCEL ---
+def neutralize_excel_value(val):
+    if pd.isna(val):
+        return val
+    s = str(val)
+    if s and s[0] in ('=', '+', '-', '@'):
+        return "'" + s
+    return s
+
+def neutralize_df_for_excel(df):
+    try:
+        return df.applymap(neutralize_excel_value)
+    except Exception:
+        return df.astype(str).applymap(neutralize_excel_value)
+
 # --- HÀM XUẤT EXCEL (ĐÃ SỬA: GỘP CHUNG 1 SHEET) ---
 def to_excel(df_input, df_result):
     output = io.BytesIO()
-    # Sử dụng engine openpyxl để có thể ghi đè lên cùng 1 sheet và định dạng
+    df_input_safe = neutralize_df_for_excel(df_input.copy())
+    df_result_safe = neutralize_df_for_excel(df_result.copy())
+
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         sheet_name = 'KET_QUA_TINH_TOAN'
+        df_input_safe.to_excel(writer, index=False, sheet_name=sheet_name, startrow=1)
+        start_row_result = len(df_input_safe) + 5
+        df_result_safe.to_excel(writer, sheet_name=sheet_name, startrow=start_row_result)
         
-        # 1. Ghi bảng Thông số đầu vào (bắt đầu từ dòng 2 để chừa chỗ cho tiêu đề)
-        df_input.to_excel(writer, index=False, sheet_name=sheet_name, startrow=1)
-        
-        # Tính toán vị trí bắt đầu cho bảng Kết quả
-        # startrow_result = (dòng bắt đầu input) + (số dòng input) + (header input) + (khoảng cách)
-        # len(df_input) + 1 (header của bảng input) + 1 (dòng tiêu đề section) + 3 (khoảng cách)
-        start_row_result = len(df_input) + 5
-        
-        # 2. Ghi bảng Kết quả tính toán
-        df_result.to_excel(writer, sheet_name=sheet_name, startrow=start_row_result)
-        
-        # 3. Thêm các tiêu đề section (Header) cho đẹp mắt
-        # Lấy đối tượng worksheet từ writer
+        # Thêm tiêu đề
         worksheet = writer.sheets[sheet_name]
-        
-        # Ghi tiêu đề "I. THÔNG SỐ ĐẦU VÀO" vào ô A1
         cell_input_title = worksheet.cell(row=1, column=1, value="I. THÔNG SỐ ĐẦU VÀO")
-        
-        # Ghi tiêu đề "II. KẾT QUẢ TÍNH TOÁN" vào ô ngay trên bảng kết quả
         cell_result_title = worksheet.cell(row=start_row_result, column=1, value="II. KẾT QUẢ TÍNH TOÁN")
-        
-        # Định dạng in đậm (nếu có thư viện styles, nếu không thì bỏ qua để tránh lỗi)
         try:
             from openpyxl.styles import Font
             bold_font = Font(bold=True, size=11)
             cell_input_title.font = bold_font
             cell_result_title.font = bold_font
-        except:
-            pass
-
+        except Exception:
+            logger.debug("openpyxl.styles not available or formatting failed", exc_info=True)
     return output.getvalue()
 
 # --- HÀM HIỂN THỊ POPUP BẢN ĐỒ ---
@@ -193,13 +241,15 @@ def show_map_popup(lat, lon):
 # =============================================================================
 # PHẦN BANNER VÀ TIÊU ĐỀ
 # =============================================================================
-banner_file = "logo_CTS.jpg" 
+banner_file = "logo_CTS.jpg"
 if os.path.exists(banner_file):
     st.image(banner_file, use_container_width=True)
 else:
     st.warning(f"⚠️ Chưa tìm thấy file '{banner_file}'. Vui lòng copy file ảnh vào cùng thư mục với app.py")
 
 st.markdown("<h2 style='text-align: center; color: #0068C9;'>CÔNG CỤ TÍNH TOÁN ẤN ĐỊNH TẦN SỐ MẠNG DÙNG RIÊNG</h2>", unsafe_allow_html=True)
+# --- HIỂN THỊ PHIÊN BẢN ---
+st.markdown(f"<p class='version-text'>Phiên bản: {APP_VERSION}</p>", unsafe_allow_html=True)
 st.markdown("---")
 
 # =============================================================================
@@ -207,9 +257,9 @@ st.markdown("---")
 # =============================================================================
 col_layout_left, col_space_layout, col_layout_right = st.columns([1.8, 0.1, 1.2])
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------- 
 # CỘT TRÁI: MỤC 1
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------- 
 with col_layout_left:
     st.subheader("1. THÔNG SỐ KỸ THUẬT & VỊ TRÍ MẠNG")
 
@@ -260,62 +310,66 @@ with col_layout_left:
     with c3:
         st.markdown("**Băng thông**")
         bw = st.selectbox("Băng thông", [6.25, 12.5, 25.0], index=1, label_visibility="collapsed")
-    
+
     with c4:
         st.markdown("**Tỉnh / Thành phố**")
         is_wan = "WAN" in mode
-        
-        # --- LOGIC MỚI: CHỌN TỈNH HOẶC NHẬP TAY ---
+
         province_selection = st.selectbox(
-            "Chọn Tỉnh/TP", 
-            ["-- Chọn Tỉnh/TP --", "HANOI", "HCM", "DANANG", "KHAC"], 
-            index=0, 
+            "Chọn Tỉnh/TP",
+            ["-- Chọn Tỉnh/TP --", "HANOI", "HCM", "DANANG", "KHAC"],
+            index=0,
             label_visibility="collapsed",
             disabled=is_wan
         )
-        
-        # Biến chứa tên tỉnh người dùng nhập tay
+
         province_manual_input = ""
-        
-        # Nếu chọn KHAC -> Hiện ô nhập text
         if province_selection == "KHAC" and not is_wan:
             province_manual_input = st.text_input(
-                "Nhập tên Tỉnh/TP cụ thể:", 
+                "Nhập tên Tỉnh/TP cụ thể:",
                 placeholder="Ví dụ: Bà Rịa Vũng Tàu",
                 label_visibility="collapsed"
             )
-    
+
     with c5:
         st.markdown("**Số lượng**")
         qty = st.number_input("Số lượng", value=1, min_value=1, label_visibility="collapsed")
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------- 
 # CỘT PHẢI: MỤC 2 & MỤC 3
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------- 
 with col_layout_right:
     st.subheader("2. NẠP DỮ LIỆU ĐẦU VÀO")
-    
+
     uploaded_file = st.file_uploader("Label ẩn", type=['xls', 'xlsx', 'csv'], label_visibility="collapsed")
-    
+
+    # Kiểm tra kích thước file
+    if uploaded_file is not None:
+        size = getattr(uploaded_file, "size", None)
+        if size is not None and size > MAX_UPLOAD_BYTES:
+            st.error(f"File quá lớn (> {MAX_UPLOAD_MB} MB). Vui lòng giảm kích thước hoặc dùng file nhỏ hơn.")
+            st.stop()
+
     # --- RESET KẾT QUẢ KHI ĐỔI FILE ---
     if uploaded_file is not None:
-        current_file_id = f"{uploaded_file.name}_{uploaded_file.size}"
+        current_file_id = f"{uploaded_file.name}_{getattr(uploaded_file, 'size', '')}"
         if st.session_state.last_uploaded_file_id != current_file_id:
             st.session_state.results = None
             st.session_state.input_snapshot = None
             st.session_state.last_uploaded_file_id = current_file_id
-            st.rerun() 
-            
-        file_status_html = f"✅ Đã nhận: {uploaded_file.name}"
+            st.rerun()
+
+        safe_name = html.escape(uploaded_file.name)
+        file_status_html = f"✅ Đã nhận: {safe_name}"
     else:
         if st.session_state.last_uploaded_file_id is not None:
             st.session_state.results = None
             st.session_state.input_snapshot = None
             st.session_state.last_uploaded_file_id = None
             st.rerun()
-            
-        file_status_html = " " 
-        
+
+        file_status_html = " "
+
     st.markdown(f"""
         <div style='height: 20px; margin-top: 2px; margin-bottom: 0px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #28a745; font-weight: 500; font-size: 0.8rem;'>
             {file_status_html}
@@ -333,51 +387,51 @@ if btn_calc:
     error_msg = []
     if lon == 0.0: error_msg.append("Kinh độ chưa nhập")
     if lat == 0.0: error_msg.append("Vĩ độ chưa nhập")
-    
-    # Kiểm tra nhập tỉnh
+
     if "LAN" in mode:
-        if province_selection == "-- Chọn Tỉnh/TP --": 
+        if province_selection == "-- Chọn Tỉnh/TP --":
             error_msg.append("Thiếu Tỉnh/TP (Bắt buộc cho mạng LAN)")
-        # Nếu chọn KHAC mà chưa nhập tên tỉnh cụ thể
         if province_selection == "KHAC" and province_manual_input.strip() == "":
             error_msg.append("Vui lòng nhập tên Tỉnh/TP cụ thể")
-    
+
     if error_msg:
         st.error(f"⚠️ LỖI: {', '.join(error_msg)}")
     else:
-        # Xác định Tỉnh gửi đi tính toán
         prov_to_send = province_selection
         if province_selection == "KHAC":
-            prov_to_send = province_manual_input # Lấy giá trị nhập tay (VD: Bà Rịa Vũng Tàu)
-            
+            prov_to_send = province_manual_input
+
         if "WAN" in mode:
-            prov_to_send = "KHAC" # WAN tính toàn quốc
-            
+            prov_to_send = "KHAC"
+
         if h_anten == 0.0:
             st.warning("⚠️ Lưu ý: Độ cao Anten đang là 0m.")
-            
+
         with st.spinner('Đang tính toán...'):
             try:
                 tool = ToolAnDinhTanSo(uploaded_file)
                 user_input = {
                     "lat": lat, "lon": lon,
-                    "province_code": prov_to_send, # Gửi tên tỉnh cụ thể
+                    "province_code": prov_to_send,
                     "antenna_height": h_anten,
                     "band": band, "bw": bw, "usage_mode": mode
                 }
-                
+
                 results = tool.tinh_toan(user_input)
-                
+
                 st.session_state.results = results
+                # --- LƯU THÔNG SỐ ĐẦU VÀO (KÈM PHIÊN BẢN) ---
                 st.session_state.input_snapshot = {
                     "THAM SỐ": [
-                        "Kinh độ (Decimal)", "Vĩ độ (Decimal)", 
+                        "Phiên bản App", # Thêm dòng này
+                        "Kinh độ (Decimal)", "Vĩ độ (Decimal)",
                         "Kinh độ (DMS)", "Vĩ độ (DMS)",
-                        "Tỉnh / Thành phố", "Độ cao Anten (m)", 
-                        "Dải tần", "Băng thông (kHz)", 
+                        "Tỉnh / Thành phố", "Độ cao Anten (m)",
+                        "Dải tần", "Băng thông (kHz)",
                         "Loại mạng", "Số lượng xin"
                     ],
                     "GIÁ TRỊ": [
+                        APP_VERSION, # Giá trị phiên bản
                         lon, lat,
                         f"{lon_d}° {lon_m}' {lon_s}\"", f"{lat_d}° {lat_m}' {lat_s}\"",
                         prov_to_send if "LAN" in mode else "Toàn quốc (WAN)", h_anten,
@@ -386,49 +440,49 @@ if btn_calc:
                     ]
                 }
             except Exception as e:
+                logger.exception("Lỗi khi tính toán", exc_info=e)
                 st.error(f"Có lỗi xảy ra: {e}")
 
 # --- HIỂN THỊ KẾT QUẢ ---
 if st.session_state.results is not None:
     st.markdown("---")
     st.subheader("📊 KẾT QUẢ TÍNH TOÁN")
-    
+
     results = st.session_state.results
-    
+
     if not results:
         st.error("❌ Không tìm thấy tần số khả dụng!")
     else:
-        # --- CẬP NHẬT: Thêm cột license_list vào DataFrame ---
         df_res = pd.DataFrame(results)
-        
-        # Sắp xếp và đổi tên cột
+
         df_res = df_res[["STT", "frequency", "reuse_factor", "license_list"]]
         df_res.columns = ["STT", "Tần số Khả dụng (MHz)", "Hệ số Tái sử dụng (Điểm)", "Chú thích (Số GP)"]
         df_res.set_index("STT", inplace=True)
-        
+
         m1, m2 = st.columns(2)
         m1.metric("Số lượng tìm thấy", f"{len(results)}")
         best_freq = results[0]['frequency']
         m2.metric("Tần số tốt nhất", f"{best_freq} MHz")
-        
+
         st.table(df_res.head(qty))
-        
+
         with st.expander("Xem danh sách đầy đủ"):
             st.dataframe(df_res, use_container_width=True)
-        
+
         if st.session_state.input_snapshot:
             df_input_report = pd.DataFrame(st.session_state.input_snapshot)
             excel_data = to_excel(df_input_report, df_res)
-            
+
             now = datetime.now()
-            time_str = now.strftime("%H%M%Y") 
-            
+            time_str = now.strftime("%H%M%Y")
+
             input_file_name = "data"
             if uploaded_file is not None:
                 input_file_name = os.path.splitext(uploaded_file.name)[0]
-                
-            dl_file_name = f"ket_qua_an_dinh_{time_str}_{input_file_name}.xlsx"
-            
+
+            # --- TÊN FILE KÈM VERSION ---
+            dl_file_name = f"ket_qua_an_dinh_{time_str}_{input_file_name}_v{APP_VERSION}.xlsx"
+
             st.markdown("---")
             st.download_button(
                 label=f"LƯU KẾT QUẢ(EXCEL)",
