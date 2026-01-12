@@ -39,6 +39,24 @@ def chuan_hoa_text(text):
     text = re.sub(r'[^a-z0-9]', '', text)
     return text.upper()
 
+# --- NEW: helper to check maritime-priority bands from config ---
+def is_freq_in_priority(freq_mhz):
+    """
+    Return True if freq_mhz lies inside any tuple range in config.PRIORITY_BANDS.
+    """
+    try:
+        f = float(freq_mhz)
+    except Exception:
+        return False
+    try:
+        bands = config.PRIORITY_BANDS
+    except Exception:
+        bands = []
+    for lo, hi in bands:
+        if lo <= f <= hi:
+            return True
+    return False
+
 class ToolAnDinhTanSo:
     def __init__(self, excel_file):
         file_name = ""
@@ -327,7 +345,7 @@ class ToolAnDinhTanSo:
                     mask_final = mask_freq_exact
 
                 relevant_licenses = df_licenses[mask_final]
-                unique_lics = sorted(list(set([str(lic) for lic in relevant_licenses if str(lic).lower() not in ['nan', 'none', '']])))
+                unique_lics = sorted(list(set([str(lic) for lic in relevant_licenses if str(lic).lower() not in ['nan', 'none', '']])) )
                 unique_count = len(unique_lics)
                 license_str = ", ".join(unique_lics)
 
@@ -346,6 +364,13 @@ class ToolAnDinhTanSo:
                 "reuse_factor": item["reuse_factor"],
                 "license_list": item["license_list"]
             }
+            # --- NEW: flag priority and provide a debug-friendly flagged string ---
+            try:
+                pr = is_freq_in_priority(item["frequency"])
+            except Exception:
+                pr = False
+            new_item["is_priority"] = pr
+            new_item["frequency_flagged"] = f"{item['frequency']} 🟨" if pr else str(item['frequency'])
             results[i] = new_item
 
         return results
