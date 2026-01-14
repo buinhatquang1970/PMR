@@ -7,8 +7,15 @@ import html
 import logging
 from datetime import datetime
 from tool_tinh_toan import ToolAnDinhTanSo
-# --- NHẬP BIẾN MÀU TỪ CONFIG ---
-from config import PRIORITY_HIGHLIGHT_COLOR
+import importlib
+
+# --- IMPORT AN TOÀN CHO BIẾN MÀU SẮC ---
+try:
+    import config
+    importlib.reload(config) # Reload tại đây để cập nhật màu mới nhất
+    PRIORITY_HIGHLIGHT_COLOR = getattr(config, 'PRIORITY_HIGHLIGHT_COLOR', '#F6BE00')
+except:
+    PRIORITY_HIGHLIGHT_COLOR = '#F6BE00' # Màu mặc định nếu lỗi
 
 # Setup logger
 logging.basicConfig(level=logging.INFO)
@@ -18,7 +25,7 @@ logger = logging.getLogger(__name__)
 APP_VERSION = "1.0"
 
 # --- CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title=f"Công cụ Ấn định Tần số (v{APP_VERSION})", layout="wide")
+st.set_page_config(page_title=f"Ấn định tần số cho mạng nội bộ dùng riêng (v{APP_VERSION})", layout="wide")
 
 # --- HẠN CHẾ KÍCH THƯỚC UPLOAD (MB) ---
 MAX_UPLOAD_MB = 50
@@ -114,7 +121,7 @@ if os.path.exists(banner_file):
 else:
     st.warning(f"⚠️ Chưa tìm thấy file '{banner_file}'.")
 
-st.markdown("<h2 style='text-align: center; color: #0068C9;'>CÔNG CỤ ẤN ĐỊNH TẦN SỐ MẠNG DÙNG RIÊNG</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center; color: #0068C9;'>Ấn định tần số cho mạng nội bộ dùng riêng (Version cho các Sở)</h2>", unsafe_allow_html=True)
 st.markdown(f"<div style='text-align: right; color: #666; font-size:0.85rem; margin-top:-8px;'>Phiên bản: {APP_VERSION}</div>", unsafe_allow_html=True)
 st.markdown("---")
 
@@ -150,7 +157,8 @@ with col_layout_left:
     
     with c_mode:
         st.markdown("📡 **Loại mạng**")
-        mode = st.selectbox("Loại mạng", ["LAN", "WAN_SIMPLEX", "WAN_DUPLEX"], label_visibility="collapsed")
+        mode = st.selectbox("Loại mạng", ["LAN"], label_visibility="collapsed")
+     #   mode = st.selectbox("Loại mạng", ["LAN", "WAN_SIMPLEX", "WAN_DUPLEX"], label_visibility="collapsed")
 
     with c1:
         st.markdown("**Độ cao (m)**")
@@ -256,13 +264,11 @@ if st.session_state.results is not None:
         has_priority = "is_priority" in df_res.columns
         
         # --- CHUẨN BỊ DATAFRAME HIỂN THỊ (ĐÃ XÓA CỘT is_priority) ---
-        # Chọn các cột cần thiết, sau đó đổi tên
         cols_display = ["STT", "frequency", "reuse_factor", "license_list"]
         df_view = df_res[cols_display].copy()
         
         df_view.columns = ["STT", "Tần số Khả dụng (MHz)", "Hệ số Tái sử dụng (Điểm)", "Chú thích (Số GP)"]
         df_view.set_index("STT", inplace=True)
-        # -> Lúc này df_view KHÔNG CÒN cột is_priority nữa.
 
         m1, m2 = st.columns(2)
         m1.metric("Số lượng tìm thấy", f"{len(results)}")
@@ -272,43 +278,28 @@ if st.session_state.results is not None:
         # --- TÁCH BẢNG: ĐỀ XUẤT (TOP N) ---
         df_top = df_view.head(qty)
 
-        # --- HÀM TÔ MÀU (Dựa vào index để tra ngược lại df_res) ---
+        # --- HÀM TÔ MÀU ---
         def style_logic(df):
-            # Tạo DataFrame style trống
             styles = pd.DataFrame('', index=df.index, columns=df.columns)
             
-            # Lặp qua từng dòng của bảng ĐANG HIỂN THỊ
             for idx in df.index:
-                # Tra cứu thông tin 'is_priority' trong bảng GỐC (df_res)
-                # Lưu ý: df_res['STT'] là cột thường, df_view index là STT.
-                # Cần tìm dòng trong df_res có STT == idx
                 row_data = df_res[df_res['STT'] == idx].iloc[0]
                 is_prio = row_data.get('is_priority', False)
                 
-                # Logic màu sắc
                 if is_prio:
-                    # Nếu là hàng hải -> Vàng
                     styles.loc[idx, :] = f'color: {PRIORITY_HIGHLIGHT_COLOR}; font-weight: bold'
                 elif idx <= results[min(qty-1, len(results)-1)]['STT']: 
-                    # Nếu nằm trong top QTY (và không phải hàng hải) -> Xanh
-                    # Cách đơn giản hơn: Check xem idx có nằm trong top QTY của danh sách kết quả không
-                    # Vì danh sách đã sort, top QTY đầu tiên là top.
-                    # Lấy danh sách ID của top QTY
                     top_ids = [item['STT'] for item in results[:qty]]
                     if idx in top_ids:
                         styles.loc[idx, :] = 'color: #28a745; font-weight: bold'
-            
             return styles
 
-        # Áp dụng style cho cả 2 bảng
         styler_top = df_top.style.apply(lambda x: style_logic(df_top), axis=None)
         styler_full = df_view.style.apply(lambda x: style_logic(df_view), axis=None)
 
-        # --- 1. HIỂN THỊ BẢNG ĐỀ XUẤT ---
         st.markdown(f"**Danh sách {qty} tần số đề xuất tốt nhất:**")
         st.table(styler_top)
         
-        # --- 2. HIỂN THỊ BẢNG ĐẦY ĐỦ ---
         with st.expander("Xem danh sách đầy đủ (Tất cả kết quả)"):
             st.dataframe(styler_full, use_container_width=True)
 
