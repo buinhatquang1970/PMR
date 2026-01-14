@@ -153,7 +153,8 @@ with col_layout_left:
             if st.button("👉 Xem vị trí trên bản đồ", use_container_width=True): show_map_popup(lat, lon)
         else: st.button("👉 Xem vị trí trên bản đồ", disabled=True, use_container_width=True)
 
-    c_mode, c1, c2, c3, c4, c5 = st.columns([1.3, 0.8, 0.8, 0.9, 1.2, 0.7])
+    # ĐIỀU CHỈNH TỶ LỆ CỘT TẠI ĐÂY: Giảm cột 1 (c_mode), Tăng cột 6 (c5)
+    c_mode, c1, c2, c3, c4, c5 = st.columns([0.9, 0.8, 0.8, 0.9, 1.2, 1.1])
     
     with c_mode:
         st.markdown("📡 **Loại mạng**")
@@ -179,7 +180,7 @@ with col_layout_left:
             province_manual_input = st.text_input("Nhập tên Tỉnh/TP cụ thể:", placeholder="Ví dụ: Bà Rịa Vũng Tàu", label_visibility="collapsed")
     
     with c5:
-        st.markdown("**Số lượng**")
+        st.markdown("**Số lượng tần số**")
         qty = st.number_input("Số lượng", value=1, min_value=1, label_visibility="collapsed")
 
 with col_layout_right:
