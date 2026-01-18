@@ -49,7 +49,11 @@ if 'active_view' not in st.session_state:
 st.markdown("""
     <style>
         /* header[data-testid="stHeader"] { display: none; } */
-        .block-container { padding-top: 0rem !important; padding-bottom: 2rem; }
+        
+        /* --- KHẮC PHỤC LỖI CẮT ẢNH BANNER --- */
+        /* Tăng padding-top lên 3.5rem để đẩy nội dung xuống thấp hơn, tránh bị che khuất */
+        .block-container { padding-top: 3.5rem !important; padding-bottom: 2rem; }
+        
         h2 { font-size: 1.3rem !important; margin-top: 0.5rem; margin-bottom: 0.2rem !important; }
         h3 { font-size: 0.95rem !important; padding-top: 0.2rem !important; padding-bottom: 0.2rem !important; }
         div[data-testid="stMarkdownContainer"] > p { margin-bottom: -3px !important; font-weight: 500; }
@@ -136,11 +140,12 @@ def show_map_popup(lat, lon):
 
 banner_file = "logo_CTS.jpg" 
 if os.path.exists(banner_file):
-    st.image(banner_file, use_container_width=True)
+    # Hiển thị ảnh gốc, không ép size
+    st.image(banner_file)
 else:
     st.warning(f"⚠️ Chưa tìm thấy file '{banner_file}'.")
 
-st.markdown("<h2 style='text-align: center; color: #0068C9;'>Ấn định tần số cho mạng nội bộ dùng riêng </h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center; color: #0068C9;'>Ấn định tần số cho mạng nội bộ dùng riêng</h2>", unsafe_allow_html=True)
 st.markdown(f"<div style='text-align: right; color: #666; font-size:0.85rem; margin-top:-8px;'>Phiên bản: {APP_VERSION}</div>", unsafe_allow_html=True)
 st.markdown("---")
 
@@ -172,10 +177,7 @@ with col_layout_left:
             if st.button("👉 Xem vị trí trên bản đồ", use_container_width=True): show_map_popup(lat, lon)
         else: st.button("👉 Xem vị trí trên bản đồ", disabled=True, use_container_width=True)
 
-    # --- ĐIỀU CHỈNH TỶ LỆ CỘT & THÊM gap="small" ---
-    # Tỷ lệ mới: [1.5, 0.6, 0.6, 0.7, 1.0, 0.6] giúp các ô vừa vặn hơn
-    # gap="small" giúp khoảng cách giữa các cột nhỏ lại tối thiểu
-    c_mode, c1, c2, c3, c4, c5 = st.columns([1.2, 0.6, 0.6, 0.7, 1.0, 0.8], gap="small")
+    c_mode, c1, c2, c3, c4, c5 = st.columns([1.2, 0.6, 0.7, 0.8, 1.0, 0.8], gap="small")
     
     with c_mode:
         st.markdown("📡 **Loại mạng**")
@@ -216,7 +218,6 @@ with col_layout_right:
     if uploaded_file is not None:
         current_file_id = f"{uploaded_file.name}_{getattr(uploaded_file, 'size', '')}"
         if st.session_state.last_uploaded_file_id != current_file_id:
-            # RESET TOÀN BỘ KHI CÓ FILE MỚI
             st.session_state.results = None
             st.session_state.input_snapshot = None
             st.session_state.check_result = None
@@ -446,7 +447,7 @@ if st.session_state.active_view == "AVAILABLE" and st.session_state.results is n
 # VIEW 2: KẾT QUẢ TẦN SỐ KHÔNG KHẢ DỤNG
 elif st.session_state.active_view == "UNAVAILABLE" and st.session_state.bad_freq_results is not None:
     st.markdown("---")
-#   st.subheader("⚠️ CÁC TẦN SỐ KHÔNG KHẢ DỤNG (GÂY NHIỄU)")
+    st.subheader("⚠️ CÁC TẦN SỐ KHÔNG KHẢ DỤNG (GÂY NHIỄU)")
     
     bad_list = st.session_state.bad_freq_results
     if not bad_list:
