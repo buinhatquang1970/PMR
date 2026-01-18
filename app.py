@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 APP_VERSION = "1.0"
 
 # --- CẤU HÌNH GIAO DIỆN ---
-st.set_page_config(page_title=f"Ấn định tần số cho mạng nội bộ dùng riêng (v{APP_VERSION})", layout="wide")
+st.set_page_config(page_title=f"PMR tool (v{APP_VERSION})", layout="wide")
 
 # --- HẠN CHẾ KÍCH THƯỚC UPLOAD (MB) ---
 MAX_UPLOAD_MB = 50
@@ -38,11 +38,17 @@ if 'input_snapshot' not in st.session_state:
     st.session_state.input_snapshot = None
 if 'last_uploaded_file_id' not in st.session_state:
     st.session_state.last_uploaded_file_id = None
+if 'check_result' not in st.session_state:
+    st.session_state.check_result = None
+if 'bad_freq_results' not in st.session_state:
+    st.session_state.bad_freq_results = None
+if 'active_view' not in st.session_state:
+    st.session_state.active_view = None 
 
 # CSS TÙY CHỈNH NÂNG CAO
 st.markdown("""
     <style>
-        header[data-testid="stHeader"] { display: none; }
+        /* header[data-testid="stHeader"] { display: none; } */
         .block-container { padding-top: 0rem !important; padding-bottom: 2rem; }
         h2 { font-size: 1.3rem !important; margin-top: 0.5rem; margin-bottom: 0.2rem !important; }
         h3 { font-size: 0.95rem !important; padding-top: 0.2rem !important; padding-bottom: 0.2rem !important; }
@@ -62,8 +68,8 @@ st.markdown("""
         div[data-testid="stTable"] th { background-color: #f0f2f6 !important; color: #31333F !important; font-size: 1.2rem !important; font-weight: 800 !important; text-align: center !important; white-space: nowrap !important; padding: 15px !important; }
         div[data-testid="stTable"] td { font-size: 1.1rem !important; text-align: center !important; vertical-align: middle !important; padding: 12px !important; min-width: 200px !important; }
         div[role="dialog"] { width: 50vw !important; max-width: 50vw !important; left: auto !important; right: 0 !important; top: 0 !important; bottom: 0 !important; height: 100vh !important; margin: 0 !important; border-radius: 0 !important; transform: none !important; display: flex; flex-direction: column; }
-        div[data-testid="stSelectbox"] > div, div[data-testid="stSelectbox"] button, div[data-testid="stSelectbox"] select { min-width: 120px !important; max-width: 320px !important; white-space: nowrap !important; overflow: visible !important; text-overflow: clip !important; display: inline-block !important; }
-        .stTextInput, .stSelectbox, .stNumberInput, .stDateInput { min-width: 80px !important; }
+        div[data-testid="stSelectbox"] > div, div[data-testid="stSelectbox"] button, div[data-testid="stSelectbox"] select { min-width: 60px !important; max-width: 100% !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; display: inline-block !important; }
+        .stTextInput, .stSelectbox, .stNumberInput, .stDateInput { min-width: 50px !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -81,9 +87,12 @@ def neutralize_df_for_excel(df):
 
 def to_excel(df_input, df_result):
     output = io.BytesIO()
-    df_input_safe = neutralize_df_for_excel(df_input.copy())
     
-    # Loại bỏ cột cờ trước khi xuất Excel để file sạch
+    if df_input is not None:
+        df_input_safe = neutralize_df_for_excel(df_input.copy())
+    else:
+        df_input_safe = None
+    
     if 'is_priority' in df_result.columns:
         df_result_clean = df_result.drop(columns=['is_priority'])
     else:
@@ -93,17 +102,27 @@ def to_excel(df_input, df_result):
 
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         sheet_name = 'KET_QUA_TINH_TOAN'
-        df_input_safe.to_excel(writer, index=False, sheet_name=sheet_name, startrow=1)
-        start_row_result = len(df_input_safe) + 5
+        start_row_result = 1
+        
+        if df_input_safe is not None:
+            df_input_safe.to_excel(writer, index=False, sheet_name=sheet_name, startrow=1)
+            start_row_result = len(df_input_safe) + 5
+            
         df_result_safe.to_excel(writer, sheet_name=sheet_name, startrow=start_row_result)
         
         worksheet = writer.sheets[sheet_name]
-        cell_input_title = worksheet.cell(row=1, column=1, value="I. THÔNG SỐ ĐẦU VÀO")
-        cell_result_title = worksheet.cell(row=start_row_result, column=1, value="II. KẾT QUẢ TÍNH TOÁN")
+        
+        if df_input_safe is not None:
+            cell_input_title = worksheet.cell(row=1, column=1, value="I. THÔNG SỐ ĐẦU VÀO")
+            cell_result_title = worksheet.cell(row=start_row_result, column=1, value="II. KẾT QUẢ TÍNH TOÁN")
+        else:
+            cell_result_title = worksheet.cell(row=start_row_result, column=1, value="DANH SÁCH KẾT QUẢ")
+
         try:
             from openpyxl.styles import Font
             bold_font = Font(bold=True, size=11)
-            cell_input_title.font = bold_font
+            if df_input_safe is not None:
+                cell_input_title.font = bold_font
             cell_result_title.font = bold_font
         except Exception:
             pass
@@ -121,7 +140,7 @@ if os.path.exists(banner_file):
 else:
     st.warning(f"⚠️ Chưa tìm thấy file '{banner_file}'.")
 
-st.markdown("<h2 style='text-align: center; color: #0068C9;'>Ấn định tần số cho mạng nội bộ dùng riêng (Version cho các Sở)</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center; color: #0068C9;'>Ấn định tần số cho mạng nội bộ dùng riêng </h2>", unsafe_allow_html=True)
 st.markdown(f"<div style='text-align: right; color: #666; font-size:0.85rem; margin-top:-8px;'>Phiên bản: {APP_VERSION}</div>", unsafe_allow_html=True)
 st.markdown("---")
 
@@ -153,13 +172,14 @@ with col_layout_left:
             if st.button("👉 Xem vị trí trên bản đồ", use_container_width=True): show_map_popup(lat, lon)
         else: st.button("👉 Xem vị trí trên bản đồ", disabled=True, use_container_width=True)
 
-    # ĐIỀU CHỈNH TỶ LỆ CỘT TẠI ĐÂY: Giảm cột 1 (c_mode), Tăng cột 6 (c5)
-    c_mode, c1, c2, c3, c4, c5 = st.columns([0.9, 0.8, 0.8, 0.9, 1.2, 1.1])
+    # --- ĐIỀU CHỈNH TỶ LỆ CỘT & THÊM gap="small" ---
+    # Tỷ lệ mới: [1.5, 0.6, 0.6, 0.7, 1.0, 0.6] giúp các ô vừa vặn hơn
+    # gap="small" giúp khoảng cách giữa các cột nhỏ lại tối thiểu
+    c_mode, c1, c2, c3, c4, c5 = st.columns([1.2, 0.6, 0.6, 0.7, 1.0, 0.8], gap="small")
     
     with c_mode:
         st.markdown("📡 **Loại mạng**")
-        mode = st.selectbox("Loại mạng", ["LAN"], label_visibility="collapsed")
-     #   mode = st.selectbox("Loại mạng", ["LAN", "WAN_SIMPLEX", "WAN_DUPLEX"], label_visibility="collapsed")
+        mode = st.selectbox("Loại mạng", ["LAN", "WAN_SIMPLEX", "WAN_DUPLEX"], label_visibility="collapsed")
 
     with c1:
         st.markdown("**Độ cao (m)**")
@@ -172,7 +192,7 @@ with col_layout_left:
         bw = st.selectbox("Băng thông", [6.25, 12.5, 25.0], index=1, label_visibility="collapsed")
     
     with c4:
-        st.markdown("**Tỉnh / Thành phố**")
+        st.markdown("**Tỉnh Thành**")
         is_wan = "WAN" in mode
         province_selection = st.selectbox("Chọn Tỉnh/TP", ["-- Chọn Tỉnh/TP --", "HANOI", "HCM", "DANANG", "KHAC"], index=0, label_visibility="collapsed", disabled=is_wan)
         province_manual_input = ""
@@ -196,8 +216,12 @@ with col_layout_right:
     if uploaded_file is not None:
         current_file_id = f"{uploaded_file.name}_{getattr(uploaded_file, 'size', '')}"
         if st.session_state.last_uploaded_file_id != current_file_id:
+            # RESET TOÀN BỘ KHI CÓ FILE MỚI
             st.session_state.results = None
             st.session_state.input_snapshot = None
+            st.session_state.check_result = None
+            st.session_state.bad_freq_results = None
+            st.session_state.active_view = None
             st.session_state.last_uploaded_file_id = current_file_id
             st.rerun() 
         safe_name = html.escape(uploaded_file.name)
@@ -206,6 +230,9 @@ with col_layout_right:
         if st.session_state.last_uploaded_file_id is not None:
             st.session_state.results = None
             st.session_state.input_snapshot = None
+            st.session_state.check_result = None
+            st.session_state.bad_freq_results = None
+            st.session_state.active_view = None
             st.session_state.last_uploaded_file_id = None
             st.rerun()
         file_status_html = " " 
@@ -213,9 +240,34 @@ with col_layout_right:
     st.markdown(f"<div style='height: 20px; margin-top: 2px; color: #28a745; font-weight: 500; font-size: 0.8rem;'>{file_status_html}</div>", unsafe_allow_html=True)
 
     btn_disabled = True if uploaded_file is None else False
-    btn_calc = st.button("TÍNH TOÁN TẦN SỐ KHẢ DỤNG", type="primary", use_container_width=True, disabled=btn_disabled)
+    
+    c_btn1, c_btn2 = st.columns(2)
+    with c_btn1:
+        btn_calc = st.button("TÍNH TẦN SỐ KHẢ DỤNG", type="primary", use_container_width=True, disabled=btn_disabled)
+    with c_btn2:
+        btn_scan_bad_freq = st.button("LỌC TS KHÔNG KHẢ DỤNG", type="secondary", disabled=btn_disabled, use_container_width=True)
 
+st.markdown("---")
+st.subheader("3. KIỂM TRA TẦN SỐ CỤ THỂ")
+
+c_check_1, c_check_2 = st.columns([1, 4])
+with c_check_1:
+    f_check_val = st.number_input("Nhập tần số (MHz):", value=0.0, step=0.0125, format="%.4f")
+with c_check_2:
+    st.markdown(" ") 
+    st.markdown(" ")
+    btn_check_specific = st.button("KIỂM TRA CAN NHIỄU", type="secondary", disabled=btn_disabled)
+
+# =========================================================================
+# XỬ LÝ SỰ KIỆN NÚT BẤM (PROCESS)
+# =========================================================================
+
+# 1. Xử lý nút: TÍNH TOÁN TẦN SỐ KHẢ DỤNG
 if btn_calc:
+    st.session_state.check_result = None
+    st.session_state.bad_freq_results = None
+    st.session_state.active_view = "AVAILABLE"
+    
     error_msg = []
     if lon == 0.0: error_msg.append("Kinh độ chưa nhập")
     if lat == 0.0: error_msg.append("Vĩ độ chưa nhập")
@@ -225,6 +277,7 @@ if btn_calc:
     
     if error_msg:
         st.error(f"⚠️ LỖI: {', '.join(error_msg)}")
+        st.session_state.active_view = None
     else:
         prov_to_send = province_selection
         if province_selection == "KHAC": prov_to_send = province_manual_input
@@ -249,25 +302,94 @@ if btn_calc:
             except Exception as e:
                 logger.exception("Lỗi khi tính toán", exc_info=e)
                 st.error(f"Có lỗi xảy ra: {e}")
+                st.session_state.active_view = None
 
-# --- HIỂN THỊ KẾT QUẢ ---
-if st.session_state.results is not None:
+# 2. Xử lý nút: CÁC TẦN SỐ KHÔNG KHẢ DỤNG
+if btn_scan_bad_freq:
+    st.session_state.results = None
+    st.session_state.check_result = None
+    st.session_state.active_view = "UNAVAILABLE"
+    
+    if uploaded_file is None:
+        st.error("Vui lòng nạp file Excel trước.")
+        st.session_state.active_view = None
+    else:
+        prov_to_send = province_selection
+        if province_selection == "KHAC": prov_to_send = province_manual_input
+        if "WAN" in mode: prov_to_send = "KHAC"
+        
+        with st.spinner("Đang quét toàn bộ dải tần..."):
+            try:
+                tool = ToolAnDinhTanSo(uploaded_file)
+                user_input = {
+                    "lat": lat, "lon": lon,
+                    "province_code": prov_to_send,
+                    "antenna_height": h_anten,
+                    "band": band, "bw": bw, "usage_mode": mode
+                }
+                bad_results = tool.tim_cac_tan_so_khong_kha_dung(user_input)
+                st.session_state.bad_freq_results = bad_results
+                
+                # --- LƯU LẠI INPUT SNAPSHOT ---
+                st.session_state.input_snapshot = {
+                    "THAM SỐ": ["Phiên bản App", "Kinh độ (Decimal)", "Vĩ độ (Decimal)", "Kinh độ (DMS)", "Vĩ độ (DMS)", "Tỉnh / Thành phố", "Độ cao Anten (m)", "Dải tần", "Băng thông (kHz)", "Loại mạng", "Số lượng xin"],
+                    "GIÁ TRỊ": [APP_VERSION, lon, lat, f"{lon_d}° {lon_m}' {lon_s}\"", f"{lat_d}° {lat_m}' {lat_s}\"", prov_to_send if "LAN" in mode else "Toàn quốc (WAN)", h_anten, band, bw, mode, qty]
+                }
+                
+            except Exception as e:
+                logger.exception("Lỗi khi quét tần số", exc_info=e)
+                st.error(f"Có lỗi xảy ra: {e}")
+                st.session_state.active_view = None
+
+# 3. Xử lý nút: KIỂM TRA CỤ THỂ
+if btn_check_specific:
+    st.session_state.results = None
+    st.session_state.bad_freq_results = None
+    st.session_state.active_view = "CHECK_SPECIFIC"
+
+    if uploaded_file is None:
+        st.error("Vui lòng nạp file Excel trước.")
+        st.session_state.active_view = None
+    elif f_check_val <= 0:
+        st.error("Vui lòng nhập tần số hợp lệ.")
+        st.session_state.active_view = None
+    else:
+        prov_to_send = province_selection
+        if province_selection == "KHAC": prov_to_send = province_manual_input
+        if "WAN" in mode: prov_to_send = "KHAC"
+        
+        with st.spinner(f"Đang kiểm tra tần số {f_check_val} MHz..."):
+            try:
+                tool = ToolAnDinhTanSo(uploaded_file)
+                user_input = {
+                    "lat": lat, "lon": lon,
+                    "province_code": prov_to_send,
+                    "antenna_height": h_anten,
+                    "band": band, "bw": bw, "usage_mode": mode
+                }
+                check_res = tool.kiem_tra_tan_so_cu_the(user_input, f_check_val)
+                st.session_state.check_result = check_res
+            except Exception as e:
+                logger.exception("Lỗi khi kiểm tra tần số", exc_info=e)
+                st.error(f"Có lỗi xảy ra: {e}")
+                st.session_state.active_view = None
+
+# =========================================================================
+# HIỂN THỊ KẾT QUẢ (OUTPUT)
+# =========================================================================
+
+# VIEW 1: KẾT QUẢ TẦN SỐ KHẢ DỤNG
+if st.session_state.active_view == "AVAILABLE" and st.session_state.results is not None:
     st.markdown("---")
-    st.subheader("📊 KẾT QUẢ TÍNH TOÁN")
+    st.subheader("📊 KẾT QUẢ TÍNH TOÁN: TẦN SỐ KHẢ DỤNG")
     results = st.session_state.results
     
     if not results:
         st.error("❌ Không tìm thấy tần số khả dụng!")
     else:
         df_res = pd.DataFrame(results)
-        
-        # --- CHUẨN BỊ DATAFRAME GỐC (Dùng để tra cứu màu) ---
-        has_priority = "is_priority" in df_res.columns
-        
-        # --- CHUẨN BỊ DATAFRAME HIỂN THỊ (ĐÃ XÓA CỘT is_priority) ---
         cols_display = ["STT", "frequency", "reuse_factor", "license_list"]
         df_view = df_res[cols_display].copy()
-        
         df_view.columns = ["STT", "Tần số Khả dụng (MHz)", "Hệ số Tái sử dụng (Điểm)", "Chú thích (Số GP)"]
         df_view.set_index("STT", inplace=True)
 
@@ -276,17 +398,13 @@ if st.session_state.results is not None:
         best_freq = results[0]['frequency']
         m2.metric("Tần số tốt nhất", f"{best_freq} MHz")
 
-        # --- TÁCH BẢNG: ĐỀ XUẤT (TOP N) ---
         df_top = df_view.head(qty)
 
-        # --- HÀM TÔ MÀU ---
         def style_logic(df):
             styles = pd.DataFrame('', index=df.index, columns=df.columns)
-            
             for idx in df.index:
                 row_data = df_res[df_res['STT'] == idx].iloc[0]
                 is_prio = row_data.get('is_priority', False)
-                
                 if is_prio:
                     styles.loc[idx, :] = f'color: {PRIORITY_HIGHLIGHT_COLOR}; font-weight: bold'
                 elif idx <= results[min(qty-1, len(results)-1)]['STT']: 
@@ -309,12 +427,12 @@ if st.session_state.results is not None:
             excel_data = to_excel(df_input_report, df_res)
             
             now = datetime.now()
-            time_str = now.strftime("%H%M%Y")
+            time_str = now.strftime("%H%M%S_%d%m%Y")
             input_file_name = "data"
             if uploaded_file is not None:
                 input_file_name = os.path.splitext(uploaded_file.name)[0]
                 
-            dl_file_name = f"ket_qua_an_dinh_{time_str}_{input_file_name}_v{APP_VERSION}.xlsx"
+            dl_file_name = f"DS_TanSo_KhaDung_{time_str}_{input_file_name}.xlsx"
             
             st.markdown("---")
             st.download_button(
@@ -324,3 +442,62 @@ if st.session_state.results is not None:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
+
+# VIEW 2: KẾT QUẢ TẦN SỐ KHÔNG KHẢ DỤNG
+elif st.session_state.active_view == "UNAVAILABLE" and st.session_state.bad_freq_results is not None:
+    st.markdown("---")
+#   st.subheader("⚠️ CÁC TẦN SỐ KHÔNG KHẢ DỤNG (GÂY NHIỄU)")
+    
+    bad_list = st.session_state.bad_freq_results
+    if not bad_list:
+        st.info("Tuyệt vời! Không tìm thấy tần số nào bị nhiễu (trong dải quy hoạch). Tất cả đều khả dụng.")
+    else:
+        st.warning(f"⚠️ Tìm thấy {len(bad_list)} trường hợp tần số gây nhiễu (không khả dụng).")
+        df_bad = pd.DataFrame(bad_list)
+        st.dataframe(df_bad, use_container_width=True)
+        
+        if st.session_state.input_snapshot:
+            df_input_report = pd.DataFrame(st.session_state.input_snapshot)
+            csv_data = to_excel(df_input_report, df_bad)
+        else:
+            csv_data = to_excel(None, df_bad)
+            
+        now = datetime.now()
+        time_str = now.strftime("%H%M%S_%d%m%Y")
+        input_file_name = "data"
+        if uploaded_file is not None:
+            input_file_name = os.path.splitext(uploaded_file.name)[0]
+            
+        dl_name = f"DS_TanSo_KhongKhaDung_{time_str}_{input_file_name}.xlsx"
+        
+        st.download_button(
+            label="📥 Tải danh sách Excel",
+            data=csv_data,
+            file_name=dl_name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+
+# VIEW 3: KẾT QUẢ KIỂM TRA CỤ THỂ
+elif st.session_state.active_view == "CHECK_SPECIFIC" and st.session_state.check_result is not None:
+    st.markdown("---")
+    st.subheader("🔎 KẾT QUẢ KIỂM TRA TẦN SỐ CỤ THỂ")
+    
+    res = st.session_state.check_result
+    if res.get("status") == "OK":
+        st.success(f"✅ {res.get('msg')}")
+    else:
+        st.error(f"❌ {res.get('msg')}")
+        if "conflicts" in res and res["conflicts"]:
+            st.markdown("**Danh sách các giấy phép gây nhiễu (không đảm bảo khoảng cách):**")
+            df_conflict = pd.DataFrame(res["conflicts"])
+            if not df_conflict.empty:
+                df_conflict.rename(columns={
+                    "license": "Số Giấy Phép",
+                    "freq_conflict": "Tần số GP (MHz)",
+                    "dist_km": "Khoảng cách thực tế (km)",
+                    "req_dist_km": "Khoảng cách yêu cầu (km)",
+                    "address": "Địa chỉ trạm",
+                    "type": "Loại nhiễu"
+                }, inplace=True)
+                st.table(df_conflict)
