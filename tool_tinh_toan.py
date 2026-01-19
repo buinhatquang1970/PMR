@@ -15,6 +15,7 @@ logging.basicConfig(level=logging.INFO)
 
 EXCEL_COLUMNS = {
     "LICENSE_NO": "Số giấy phép", 
+    "CUSTOMER": "Tên khách hàng", # <-- THÊM CỘT NÀY
     "FREQUENCY": "Tần số phát",
     "FREQ_RX": "Tần số thu",
     "BANDWIDTH": "Phương thức phát", 
@@ -81,7 +82,8 @@ class ToolAnDinhTanSo:
                 for key, col_name in EXCEL_COLUMNS.items():
                     if col_name in self.df.columns:
                         target = {
-                            "LICENSE_NO": "license", "FREQUENCY": "raw_freq", "FREQ_RX": "raw_freq_rx",
+                            "LICENSE_NO": "license", "CUSTOMER": "raw_customer", # <-- MAP TÊN KHÁCH HÀNG
+                            "FREQUENCY": "raw_freq", "FREQ_RX": "raw_freq_rx",
                             "BANDWIDTH": "raw_bw", "LAT": "raw_lat",
                             "LON": "raw_lon", "ADDRESS": "raw_address",
                             "PROVINCE_OLD": "raw_province_col", "ANTENNA_HEIGHT": "h_anten",
@@ -89,10 +91,15 @@ class ToolAnDinhTanSo:
                         }.get(key, key)
                         rename_map[col_name] = target
 
+                # Fallback tìm cột
                 if "raw_freq" not in rename_map.values():
                     col = find_col_by_keyword(["Tần số phát", "Frequency"])
                     if col: rename_map[col] = "raw_freq"
                 
+                if "raw_customer" not in rename_map.values():
+                    col = find_col_by_keyword(["Tên khách hàng", "Khách hàng", "Customer", "Chủ mạng"])
+                    if col: rename_map[col] = "raw_customer"
+
                 if "raw_freq_rx" not in rename_map.values():
                     col = find_col_by_keyword(["Tần số thu", "Rx Freq"])
                     if col: rename_map[col] = "raw_freq_rx"
@@ -177,6 +184,7 @@ class ToolAnDinhTanSo:
         has_address_col = 'raw_address' in self.df.columns
         has_conditions_col = 'raw_conditions' in self.df.columns
         has_license_col = 'license' in self.df.columns
+        has_customer_col = 'raw_customer' in self.df.columns # Kiểm tra cột khách hàng
         
         for idx, row in self.df.iterrows():
             raw_prov_extracted = ""
@@ -215,6 +223,13 @@ class ToolAnDinhTanSo:
             if has_license_col:
                 license_str = str(row.get('license', '')).strip().upper()
             
+            # Lấy tên khách hàng
+            customer_str = ""
+            if has_customer_col:
+                val = str(row.get('raw_customer', ''))
+                if val.lower() not in ['nan', 'none']:
+                    customer_str = val.strip()
+
             if "WAN" in license_str: net_type = "WAN_SIMPLEX" 
             
             all_freqs_to_check = []
@@ -232,7 +247,8 @@ class ToolAnDinhTanSo:
                     "province": clean_prov, 
                     "net_type": net_type,
                     "is_holding": is_holding,
-                    "license": license_str 
+                    "license": license_str,
+                    "customer": customer_str # <-- LƯU TÊN KHÁCH HÀNG
                 })
         self.df = pd.DataFrame(cleaned_rows)
 
@@ -349,7 +365,6 @@ class ToolAnDinhTanSo:
                 dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
             except: continue
             
-            # --- FIX: Bỏ qua nếu trùng tọa độ (Khoảng cách = 0) ---
             if dist_km == 0: continue
             
             delta_f = abs(f_check - row['freq']) * 1000 
@@ -368,6 +383,7 @@ class ToolAnDinhTanSo:
 
                 conflicts.append({
                     "license": row['license'],
+                    "customer": row.get('customer', ''), # <-- THÊM KHÁCH HÀNG VÀO KẾT QUẢ
                     "freq_conflict": row['freq'],
                     "dist_km": round(dist_km, 2),
                     "req_dist_km": req_dist,
@@ -403,7 +419,6 @@ class ToolAnDinhTanSo:
                     dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
                 except: continue
                 
-                # --- FIX: Bỏ qua nếu trùng tọa độ (Khoảng cách = 0) ---
                 if dist_km == 0: continue
                 
                 delta_f = abs(f_check - row['freq']) * 1000 
@@ -423,6 +438,7 @@ class ToolAnDinhTanSo:
                     bad_results.append({
                         "Tần số (MHz)": f_check,
                         "Số GP bị nhiễu": row['license'],
+                        "Tên Khách Hàng": row.get('customer', ''), # <-- THÊM CỘT TÊN KHÁCH HÀNG
                         "Tần số trạm bị nhiễu (MHz)": row['freq'],
                         "Loại nhiễu": int_type,
                         "Khoảng cách thực tế (km)": round(dist_km, 2),
