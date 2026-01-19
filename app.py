@@ -49,7 +49,7 @@ if 'active_view' not in st.session_state:
 st.markdown("""
     <style>
         /* header[data-testid="stHeader"] { display: none; } */
-        
+           
         /* Tăng padding-top lên 3.5rem để đẩy nội dung xuống thấp hơn, tránh bị che khuất banner */
         .block-container { padding-top: 3.5rem !important; padding-bottom: 2rem; }
         
@@ -62,7 +62,7 @@ st.markdown("""
         [data-testid='stFileUploader'] { height: 65px !important; overflow: hidden !important; margin-bottom: 0px !important; padding-top: 0px; }
         [data-testid='stFileUploader'] section { padding: 0.5rem !important; min-height: 0px !important; }
         [data-testid='stFileUploader'] section > div > div > span { display: none; }
-        [data-testid='stFileUploader'] section > div > div::after { content: "Lưu ý: Dữ liệu cần xuất từ PM cấp phép và lưu dưới dạng Excel(.xlsx)"; display: block; font-weight: bold; color: #333; }
+        [data-testid='stFileUploader'] section > div > div::after { content: "Nhập file Excel (.xlsx)"; display: block; font-weight: bold; color: #333; }
         [data-testid='stFileUploader'] section small { display: none; }
         div[data-testid="stColumn"] button[kind="secondary"] { color: #d93025 !important; font-weight: bold !important; border: 1px solid #ddd !important; background-color: #fff !important; width: 100%; transition: all 0.3s; }
         div[data-testid="stColumn"] button[kind="secondary"]:hover { background-color: #fce8e6 !important; border-color: #d93025 !important; color: #d93025 !important; }
@@ -73,6 +73,29 @@ st.markdown("""
         div[role="dialog"] { width: 50vw !important; max-width: 50vw !important; left: auto !important; right: 0 !important; top: 0 !important; bottom: 0 !important; height: 100vh !important; margin: 0 !important; border-radius: 0 !important; transform: none !important; display: flex; flex-direction: column; }
         div[data-testid="stSelectbox"] > div, div[data-testid="stSelectbox"] button, div[data-testid="stSelectbox"] select { min-width: 60px !important; max-width: 100% !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; display: inline-block !important; }
         .stTextInput, .stSelectbox, .stNumberInput, .stDateInput { min-width: 50px !important; }
+        /* Mặc định trên PC: Giữ gọn gàng */
+        @media (min-width: 768px) {
+            [data-testid='stFileUploader'] { 
+                height: 65px !important; 
+                overflow: hidden !important; 
+                margin-bottom: 0px !important; 
+                padding-top: 0px; 
+            }
+        }
+
+        /* Trên Mobile: Thả lỏng chiều cao để nút Browse không bị mất */
+        @media (max-width: 767px) {
+            [data-testid='stFileUploader'] { 
+                height: auto !important; 
+                min-height: 80px !important;
+                overflow: visible !important; 
+                margin-bottom: 10px !important; 
+            }
+            /* Tăng kích thước vùng bấm cho dễ thao tác trên điện thoại */
+            [data-testid='stFileUploader'] section {
+                min-height: 60px !important;
+            }
+        }        
     </style>
 """, unsafe_allow_html=True)
 
@@ -139,11 +162,12 @@ def show_map_popup(lat, lon):
 
 banner_file = "logo_CTS.jpg" 
 if os.path.exists(banner_file):
+    # Hiển thị ảnh gốc, không ép size
     st.image(banner_file)
 else:
     st.warning(f"⚠️ Chưa tìm thấy file '{banner_file}'.")
 
-st.markdown("<h2 style='text-align: center; color: #0068C9;'>Ấn định tần số cho mạng nội bộ dùng riêng </h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center; color: #0068C9;'>Ấn định tần số cho mạng nội bộ dùng riêng (Version cho các Sở)</h2>", unsafe_allow_html=True)
 st.markdown(f"<div style='text-align: right; color: #666; font-size:0.85rem; margin-top:-8px;'>Phiên bản: {APP_VERSION}</div>", unsafe_allow_html=True)
 st.markdown("---")
 
@@ -461,7 +485,7 @@ if st.session_state.active_view == "AVAILABLE" and st.session_state.results is n
 # VIEW 2: KẾT QUẢ TẦN SỐ KHÔNG KHẢ DỤNG
 elif st.session_state.active_view == "UNAVAILABLE" and st.session_state.bad_freq_results is not None:
     st.markdown("---")
-    st.subheader("⚠️ CÁC TẦN SỐ KHÔNG KHẢ DỤNG (GÂY NHIỄU)")
+#    st.subheader("⚠️ CÁC TẦN SỐ KHÔNG KHẢ DỤNG (GÂY NHIỄU)")
     
     bad_list = st.session_state.bad_freq_results
     if not bad_list:
@@ -469,7 +493,20 @@ elif st.session_state.active_view == "UNAVAILABLE" and st.session_state.bad_freq
     else:
         st.warning(f"⚠️ Tìm thấy {len(bad_list)} trường hợp tần số gây nhiễu (không khả dụng).")
         df_bad = pd.DataFrame(bad_list)
-        st.dataframe(df_bad, use_container_width=True)
+        
+        # --- CẤU HÌNH CỘT ĐỂ GIẢM ĐỘ RỘNG CỘT KHÁCH HÀNG ---
+        st.dataframe(
+            df_bad, 
+            use_container_width=True,
+            column_config={
+                "Tên Khách Hàng": st.column_config.TextColumn(width="medium"), # 
+                "Địa chỉ trạm bị nhiễu": st.column_config.TextColumn(width="small"), # 
+                "Khoảng cách thực tế (km)": st.column_config.TextColumn(width="small"), # 
+                "Khoảng cách yêu cầu (km)": st.column_config.TextColumn(width="small"), 
+                "Tần số (MHz)": st.column_config.NumberColumn(format="%.4f"),
+                "Tần số trạm bị nhiễu (MHz)": st.column_config.NumberColumn(format="%.4f"),
+            }
+        )
         
         if st.session_state.input_snapshot:
             df_input_report = pd.DataFrame(st.session_state.input_snapshot)
@@ -509,6 +546,7 @@ elif st.session_state.active_view == "CHECK_SPECIFIC" and st.session_state.check
             if not df_conflict.empty:
                 df_conflict.rename(columns={
                     "license": "Số Giấy Phép",
+                    "customer": "Tên Khách Hàng",
                     "freq_conflict": "Tần số GP (MHz)",
                     "dist_km": "Khoảng cách thực tế (km)",
                     "req_dist_km": "Khoảng cách yêu cầu (km)",
