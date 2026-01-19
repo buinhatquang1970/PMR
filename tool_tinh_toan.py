@@ -28,7 +28,6 @@ EXCEL_COLUMNS = {
 
 MAX_CANDIDATES = 20000
 
-# --- HÀM BỔ TRỢ: CHUẨN HÓA TIẾNG VIỆT ---
 def chuan_hoa_text(text):
     if pd.isna(text) or str(text).strip() == "":
         return ""
@@ -48,81 +47,82 @@ def chuan_hoa_text(text):
 class ToolAnDinhTanSo:
     def __init__(self, excel_file):
         importlib.reload(config)
-        self.reserved_frequencies = []
+        self.reserved_frequencies = [] 
         
         file_name = ""
+        file_source = excel_file
         if hasattr(excel_file, 'name'):
             file_name = excel_file.name
-            file_source = excel_file
         elif isinstance(excel_file, str):
             file_name = excel_file
-            file_source = excel_file
         
+        # --- ĐỌC FILE ĐƠN GIẢN ---
+        self.df = pd.DataFrame()
         try:
-            if file_name.lower().endswith('.csv'): self.df = pd.read_csv(file_source)
+            if file_name.lower().endswith('.csv'):
+                self.df = pd.read_csv(file_source)
+            elif file_name.lower().endswith('.xlsx'):
+                self.df = pd.read_excel(file_source, engine='openpyxl')
             else:
-                try: self.df = pd.read_excel(file_source, engine='openpyxl')
-                except: 
-                    try: self.df = pd.read_excel(file_source, engine='xlrd')
-                    except: self.df = pd.read_excel(file_source)
-
-            self.df.columns = self.df.columns.str.strip()
-            rename_map = {}
+                self.df = pd.DataFrame()
             
-            def find_col_by_keyword(keywords):
-                for col in self.df.columns:
-                    col_lower = str(col).lower()
-                    for kw in keywords:
-                        if kw.lower() in col_lower:
-                            return col
-                return None
-
-            for key, col_name in EXCEL_COLUMNS.items():
-                if col_name in self.df.columns:
-                    target = {
-                        "LICENSE_NO": "license", "FREQUENCY": "raw_freq", "FREQ_RX": "raw_freq_rx",
-                        "BANDWIDTH": "raw_bw", "LAT": "raw_lat",
-                        "LON": "raw_lon", "ADDRESS": "raw_address",
-                        "PROVINCE_OLD": "raw_province_col", "ANTENNA_HEIGHT": "h_anten",
-                        "CONDITIONS": "raw_conditions"
-                    }.get(key, key)
-                    rename_map[col_name] = target
-
-            # Fallback tìm cột nếu không khớp tên chính xác
-            if "raw_freq" not in rename_map.values():
-                col = find_col_by_keyword(["Tần số phát", "Frequency"])
-                if col: rename_map[col] = "raw_freq"
-            
-            if "raw_freq_rx" not in rename_map.values():
-                col = find_col_by_keyword(["Tần số thu", "Rx Freq"])
-                if col: rename_map[col] = "raw_freq_rx"
-
-            if "raw_lat" not in rename_map.values():
-                col = find_col_by_keyword(["Vĩ độ", "Lat"])
-                if col: rename_map[col] = "raw_lat"
+            if not self.df.empty:
+                self.df.columns = self.df.columns.str.strip()
+                rename_map = {}
                 
-            if "raw_lon" not in rename_map.values():
-                col = find_col_by_keyword(["Kinh độ", "Lon"])
-                if col: rename_map[col] = "raw_lon"
-                
-            if "license" not in rename_map.values():
-                col = find_col_by_keyword(["Số GP", "Giấy phép", "License"])
-                if col: rename_map[col] = "license"
-                
-            if "raw_bw" not in rename_map.values():
-                col = find_col_by_keyword(["Phương thức", "Emission", "Bandwidth"])
-                if col: rename_map[col] = "raw_bw"
+                def find_col_by_keyword(keywords):
+                    for col in self.df.columns:
+                        col_lower = str(col).lower()
+                        for kw in keywords:
+                            if kw.lower() in col_lower:
+                                return col
+                    return None
 
-            if "raw_address" not in rename_map.values():
-                col = find_col_by_keyword(["Địa điểm", "Địa chỉ", "Address"])
-                if col: rename_map[col] = "raw_address"
-                
-            if "raw_conditions" not in rename_map.values():
-                col = find_col_by_keyword(["điều kiện", "conditions", "ghi chú"])
-                if col: rename_map[col] = "raw_conditions"
+                for key, col_name in EXCEL_COLUMNS.items():
+                    if col_name in self.df.columns:
+                        target = {
+                            "LICENSE_NO": "license", "FREQUENCY": "raw_freq", "FREQ_RX": "raw_freq_rx",
+                            "BANDWIDTH": "raw_bw", "LAT": "raw_lat",
+                            "LON": "raw_lon", "ADDRESS": "raw_address",
+                            "PROVINCE_OLD": "raw_province_col", "ANTENNA_HEIGHT": "h_anten",
+                            "CONDITIONS": "raw_conditions"
+                        }.get(key, key)
+                        rename_map[col_name] = target
 
-            self.df = self.df.rename(columns=rename_map)
-            self.clean_data()
+                if "raw_freq" not in rename_map.values():
+                    col = find_col_by_keyword(["Tần số phát", "Frequency"])
+                    if col: rename_map[col] = "raw_freq"
+                
+                if "raw_freq_rx" not in rename_map.values():
+                    col = find_col_by_keyword(["Tần số thu", "Rx Freq"])
+                    if col: rename_map[col] = "raw_freq_rx"
+
+                if "raw_lat" not in rename_map.values():
+                    col = find_col_by_keyword(["Vĩ độ", "Lat"])
+                    if col: rename_map[col] = "raw_lat"
+                    
+                if "raw_lon" not in rename_map.values():
+                    col = find_col_by_keyword(["Kinh độ", "Lon"])
+                    if col: rename_map[col] = "raw_lon"
+                    
+                if "license" not in rename_map.values():
+                    col = find_col_by_keyword(["Số GP", "Giấy phép", "License"])
+                    if col: rename_map[col] = "license"
+                    
+                if "raw_bw" not in rename_map.values():
+                    col = find_col_by_keyword(["Phương thức", "Emission", "Bandwidth"])
+                    if col: rename_map[col] = "raw_bw"
+
+                if "raw_address" not in rename_map.values():
+                    col = find_col_by_keyword(["Địa điểm", "Địa chỉ", "Address"])
+                    if col: rename_map[col] = "raw_address"
+                    
+                if "raw_conditions" not in rename_map.values():
+                    col = find_col_by_keyword(["điều kiện", "conditions", "ghi chú"])
+                    if col: rename_map[col] = "raw_conditions"
+
+                self.df = self.df.rename(columns=rename_map)
+                self.clean_data()
             
         except Exception as e:
             logger.exception("Lỗi khởi tạo Tool")
@@ -160,7 +160,6 @@ class ToolAnDinhTanSo:
 
     def parse_freq_string(self, freq_str):
         if pd.isna(freq_str): return []
-        # Xử lý chuỗi, loại bỏ MHz, Mhz, mhz... thay thế ; bằng khoảng trắng
         clean_s = str(freq_str).upper().replace(',', '.').replace('MHZ', '').replace(';', ' ')
         freqs = []
         for item in clean_s.split():
@@ -191,18 +190,14 @@ class ToolAnDinhTanSo:
                 raw_prov_extracted = parts[-1] if len(parts) > 0 else str(row.get('raw_address', ''))
             
             clean_prov = chuan_hoa_text(raw_prov_extracted)
-            is_holding = "LUUDONGTOANQUOC" in clean_prov
             
-            is_reserved_cond = False
-            if has_conditions_col:
-                cond_val = str(row.get('raw_conditions', '')).lower()
-                if "giữ chỗ tần số" in cond_val:
-                    is_reserved_cond = True
+            is_holding = "LUUDONGTOANQUOC" in clean_prov
+            is_reserved_cond = False 
             
             tx_freqs = self.parse_freq_string(row.get('raw_freq'))
             rx_freqs = self.parse_freq_string(row.get('raw_freq_rx'))
             
-            if is_holding or is_reserved_cond:
+            if is_holding:
                 for f in tx_freqs: self.reserved_frequencies.append(f)
                 for f in rx_freqs: self.reserved_frequencies.append(f)
             
@@ -302,7 +297,7 @@ class ToolAnDinhTanSo:
     # --- HÀM 1: KIỂM TRA TẦN SỐ CỤ THỂ ---
     def kiem_tra_tan_so_cu_the(self, user_input, f_check):
         if self.df.empty: 
-            return {"status": "ERROR", "msg": "Chưa có dữ liệu Excel"}
+            return {"status": "ERROR", "msg": "Chưa có dữ liệu Excel hoặc dữ liệu rỗng."}
 
         user_mode_tuple = self.xac_dinh_kich_ban_user(user_input)
         band = user_input['band']
@@ -335,9 +330,15 @@ class ToolAnDinhTanSo:
         if is_shared:
             return {"status": "FAIL", "msg": "Tần số thuộc kênh DÙNG CHUNG.", "conflicts": []}
 
-        for res_f in self.reserved_frequencies:
-            if abs(f_check_rounded - round(res_f, 5)) < 0.0001:
-                return {"status": "FAIL", "msg": "Tần số giữ chỗ/Lưu động toàn quốc.", "conflicts": []}
+        # Kiểm tra giữ chỗ
+        df_holding = self.df[self.df['is_holding'] == True]
+        for _, row in df_holding.iterrows():
+            if abs(f_check - row['freq']) < 0.001:
+                return {
+                    "status": "FAIL", 
+                    "msg": f"Vướng tần số giữ chỗ/Lưu động toàn quốc. (Số GP: {row['license']}, Tần số gốc: {row['freq']})", 
+                    "conflicts": []
+                }
 
         conflicts = []
         df_subset = self.df[np.abs(self.df['freq'] - f_check) < 0.035]
@@ -347,6 +348,9 @@ class ToolAnDinhTanSo:
             try:
                 dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
             except: continue
+            
+            # --- FIX: Bỏ qua nếu trùng tọa độ (Khoảng cách = 0) ---
+            if dist_km == 0: continue
             
             delta_f = abs(f_check - row['freq']) * 1000 
             rx_bw = row['bw']
@@ -375,7 +379,7 @@ class ToolAnDinhTanSo:
             return {"status": "FAIL", "msg": "Tần số gây nhiễu.", "conflicts": conflicts}
         return {"status": "OK", "msg": "Tần số KHẢ DỤNG.", "conflicts": []}
 
-    # --- HÀM 2: TÌM CÁC TẦN SỐ KHÔNG KHẢ DỤNG (REVERT LOGIC LIỆT KÊ CHI TIẾT - KHÔNG GOM NHÓM) ---
+    # --- HÀM 2: TÌM CÁC TẦN SỐ KHÔNG KHẢ DỤNG ---
     def tim_cac_tan_so_khong_kha_dung(self, user_input):
         if self.df.empty: return []
         
@@ -391,7 +395,6 @@ class ToolAnDinhTanSo:
         bad_results = []
         
         for f_check in candidates:
-            # Check nhiễu khoảng cách
             df_subset = self.df[np.abs(self.df['freq'] - f_check) < 0.035]
             
             for _, row in df_subset.iterrows():
@@ -399,6 +402,9 @@ class ToolAnDinhTanSo:
                 try:
                     dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
                 except: continue
+                
+                # --- FIX: Bỏ qua nếu trùng tọa độ (Khoảng cách = 0) ---
+                if dist_km == 0: continue
                 
                 delta_f = abs(f_check - row['freq']) * 1000 
                 rx_bw = row['bw']
@@ -414,7 +420,6 @@ class ToolAnDinhTanSo:
                     elif delta_f < 30: int_type = "Kênh kề 25kHz"
                     else: int_type = f"Lệch {delta_f:.2f} kHz"
                     
-                    # QUAN TRỌNG: In ra từng dòng, KHÔNG GOM NHÓM, KHÔNG BREAK
                     bad_results.append({
                         "Tần số (MHz)": f_check,
                         "Số GP bị nhiễu": row['license'],
@@ -424,7 +429,6 @@ class ToolAnDinhTanSo:
                         "Khoảng cách yêu cầu (km)": req_dist,
                         "Địa chỉ trạm bị nhiễu": row.get('province', '')
                     })
-                    # ĐÃ BỎ LỆNH BREAK ĐỂ QUÉT HẾT
 
         return bad_results
 
@@ -506,6 +510,9 @@ class ToolAnDinhTanSo:
                 try:
                     dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
                 except: continue
+                
+                # --- FIX: Bỏ qua nếu trùng tọa độ ---
+                if dist_km == 0: continue
                 
                 delta_f = abs(f_check - row['freq']) * 1000 
                 rx_bw = row['bw']
