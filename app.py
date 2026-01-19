@@ -50,8 +50,7 @@ st.markdown("""
     <style>
         /* header[data-testid="stHeader"] { display: none; } */
         
-        /* --- KHẮC PHỤC LỖI CẮT ẢNH BANNER --- */
-        /* Tăng padding-top lên 3.5rem để đẩy nội dung xuống thấp hơn, tránh bị che khuất */
+        /* Tăng padding-top lên 3.5rem để đẩy nội dung xuống thấp hơn, tránh bị che khuất banner */
         .block-container { padding-top: 3.5rem !important; padding-bottom: 2rem; }
         
         h2 { font-size: 1.3rem !important; margin-top: 0.5rem; margin-bottom: 0.2rem !important; }
@@ -63,7 +62,7 @@ st.markdown("""
         [data-testid='stFileUploader'] { height: 65px !important; overflow: hidden !important; margin-bottom: 0px !important; padding-top: 0px; }
         [data-testid='stFileUploader'] section { padding: 0.5rem !important; min-height: 0px !important; }
         [data-testid='stFileUploader'] section > div > div > span { display: none; }
-        [data-testid='stFileUploader'] section > div > div::after { content: "Nhập file Excel (xlsx)"; display: block; font-weight: bold; color: #333; }
+        [data-testid='stFileUploader'] section > div > div::after { content: "Lưu ý: Dữ liệu cần xuất từ PM cấp phép và lưu dưới dạng Excel(.xlsx)"; display: block; font-weight: bold; color: #333; }
         [data-testid='stFileUploader'] section small { display: none; }
         div[data-testid="stColumn"] button[kind="secondary"] { color: #d93025 !important; font-weight: bold !important; border: 1px solid #ddd !important; background-color: #fff !important; width: 100%; transition: all 0.3s; }
         div[data-testid="stColumn"] button[kind="secondary"]:hover { background-color: #fce8e6 !important; border-color: #d93025 !important; color: #d93025 !important; }
@@ -140,12 +139,11 @@ def show_map_popup(lat, lon):
 
 banner_file = "logo_CTS.jpg" 
 if os.path.exists(banner_file):
-    # Hiển thị ảnh gốc, không ép size
     st.image(banner_file)
 else:
     st.warning(f"⚠️ Chưa tìm thấy file '{banner_file}'.")
 
-st.markdown("<h2 style='text-align: center; color: #0068C9;'>Ấn định tần số cho mạng nội bộ dùng riêng</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center; color: #0068C9;'>Ấn định tần số cho mạng nội bộ dùng riêng </h2>", unsafe_allow_html=True)
 st.markdown(f"<div style='text-align: right; color: #666; font-size:0.85rem; margin-top:-8px;'>Phiên bản: {APP_VERSION}</div>", unsafe_allow_html=True)
 st.markdown("---")
 
@@ -177,6 +175,7 @@ with col_layout_left:
             if st.button("👉 Xem vị trí trên bản đồ", use_container_width=True): show_map_popup(lat, lon)
         else: st.button("👉 Xem vị trí trên bản đồ", disabled=True, use_container_width=True)
 
+    # --- CẤU HÌNH TỶ LỆ CỘT GỌN GÀNG (GIỮ NGUYÊN THEO YÊU CẦU) ---
     c_mode, c1, c2, c3, c4, c5 = st.columns([1.2, 0.6, 0.7, 0.8, 1.0, 0.8], gap="small")
     
     with c_mode:
@@ -194,7 +193,7 @@ with col_layout_left:
         bw = st.selectbox("Băng thông", [6.25, 12.5, 25.0], index=1, label_visibility="collapsed")
     
     with c4:
-        st.markdown("**Tỉnh Thành**")
+        st.markdown("**Tỉnh / Thành phố**")
         is_wan = "WAN" in mode
         province_selection = st.selectbox("Chọn Tỉnh/TP", ["-- Chọn Tỉnh/TP --", "HANOI", "HCM", "DANANG", "KHAC"], index=0, label_visibility="collapsed", disabled=is_wan)
         province_manual_input = ""
@@ -207,27 +206,40 @@ with col_layout_left:
 
 with col_layout_right:
     st.subheader("2. NẠP DỮ LIỆU ĐẦU VÀO")
-    uploaded_file = st.file_uploader("Label ẩn", type=['xls', 'xlsx', 'csv'], label_visibility="collapsed")
+    
+    # --- CHỈNH SỬA: BỎ type=['xlsx'] ĐỂ CODE PYTHON TỰ BẮT LỖI ---
+    uploaded_file = st.file_uploader("Label ẩn", type=None, label_visibility="collapsed")
+    
+    btn_disabled = True # Mặc định là khóa
     
     if uploaded_file is not None:
         size = getattr(uploaded_file, "size", None)
         if size is not None and size > MAX_UPLOAD_BYTES:
             st.error(f"File quá lớn (> {MAX_UPLOAD_MB} MB).")
-            st.stop()
+            btn_disabled = True
+        elif not uploaded_file.name.lower().endswith('.xlsx'):
+            # --- BÁO LỖI NẾU KHÔNG PHẢI XLSX ---
+            st.error("⚠️ Cần nhập file định dạng xlsx")
+            btn_disabled = True
+        else:
+            # File hợp lệ
+            current_file_id = f"{uploaded_file.name}_{getattr(uploaded_file, 'size', '')}"
+            if st.session_state.last_uploaded_file_id != current_file_id:
+                # RESET TOÀN BỘ KHI CÓ FILE MỚI HỢP LỆ
+                st.session_state.results = None
+                st.session_state.input_snapshot = None
+                st.session_state.check_result = None
+                st.session_state.bad_freq_results = None
+                st.session_state.active_view = None
+                st.session_state.last_uploaded_file_id = current_file_id
+                st.rerun() 
             
-    if uploaded_file is not None:
-        current_file_id = f"{uploaded_file.name}_{getattr(uploaded_file, 'size', '')}"
-        if st.session_state.last_uploaded_file_id != current_file_id:
-            st.session_state.results = None
-            st.session_state.input_snapshot = None
-            st.session_state.check_result = None
-            st.session_state.bad_freq_results = None
-            st.session_state.active_view = None
-            st.session_state.last_uploaded_file_id = current_file_id
-            st.rerun() 
-        safe_name = html.escape(uploaded_file.name)
-        file_status_html = f"✅ Đã nhận: {safe_name}"
+            safe_name = html.escape(uploaded_file.name)
+            file_status_html = f"✅ Đã nhận: {safe_name}"
+            st.markdown(f"<div style='height: 20px; margin-top: 2px; color: #28a745; font-weight: 500; font-size: 0.8rem;'>{file_status_html}</div>", unsafe_allow_html=True)
+            btn_disabled = False # Mở khóa nút bấm
     else:
+        # Nếu chưa chọn file hoặc đã xóa file
         if st.session_state.last_uploaded_file_id is not None:
             st.session_state.results = None
             st.session_state.input_snapshot = None
@@ -236,11 +248,7 @@ with col_layout_right:
             st.session_state.active_view = None
             st.session_state.last_uploaded_file_id = None
             st.rerun()
-        file_status_html = " " 
-        
-    st.markdown(f"<div style='height: 20px; margin-top: 2px; color: #28a745; font-weight: 500; font-size: 0.8rem;'>{file_status_html}</div>", unsafe_allow_html=True)
-
-    btn_disabled = True if uploaded_file is None else False
+        st.markdown(f"<div style='height: 20px; margin-top: 2px; color: #28a745; font-weight: 500; font-size: 0.8rem;'> </div>", unsafe_allow_html=True)
     
     c_btn1, c_btn2 = st.columns(2)
     with c_btn1:
@@ -314,6 +322,9 @@ if btn_scan_bad_freq:
     if uploaded_file is None:
         st.error("Vui lòng nạp file Excel trước.")
         st.session_state.active_view = None
+    elif btn_disabled: # Kiểm tra thêm nếu nút bị disable do sai định dạng
+         st.error("Vui lòng nạp đúng định dạng file (.xlsx).")
+         st.session_state.active_view = None
     else:
         prov_to_send = province_selection
         if province_selection == "KHAC": prov_to_send = province_manual_input
@@ -351,6 +362,9 @@ if btn_check_specific:
     if uploaded_file is None:
         st.error("Vui lòng nạp file Excel trước.")
         st.session_state.active_view = None
+    elif btn_disabled:
+         st.error("Vui lòng nạp đúng định dạng file (.xlsx).")
+         st.session_state.active_view = None
     elif f_check_val <= 0:
         st.error("Vui lòng nhập tần số hợp lệ.")
         st.session_state.active_view = None
