@@ -62,7 +62,7 @@ st.markdown("""
         [data-testid='stFileUploader'] { height: 65px !important; overflow: hidden !important; margin-bottom: 0px !important; padding-top: 0px; }
         [data-testid='stFileUploader'] section { padding: 0.5rem !important; min-height: 0px !important; }
         [data-testid='stFileUploader'] section > div > div > span { display: none; }
-        [data-testid='stFileUploader'] section > div > div::after { content: "Lưu ý: Dữ liệu cần xuất từ PM cấp phép và lưu dưới dạng Excel(.xlsx)"; display: block; font-weight: bold; color: #333; }
+        [data-testid='stFileUploader'] section > div > div::after { content: "Lưu ý: Chỉ nhận file Excel(.xlsx)"; display: block; font-weight: bold; color: #333; }
         [data-testid='stFileUploader'] section small { display: none; }
         div[data-testid="stColumn"] button[kind="secondary"] { color: #d93025 !important; font-weight: bold !important; border: 1px solid #ddd !important; background-color: #fff !important; width: 100%; transition: all 0.3s; }
         div[data-testid="stColumn"] button[kind="secondary"]:hover { background-color: #fce8e6 !important; border-color: #d93025 !important; color: #d93025 !important; }
