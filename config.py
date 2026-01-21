@@ -15,6 +15,10 @@ PRIORITY_HIGHLIGHT_COLOR = '#F6BE00'
 FREQUENCY_ALLOCATION_VHF = [
     (138.0000, 141.5000, ['LAN'], "LAN"),
     (141.5000, 142.0000, ['WAN_SIMPLEX'], "WAN Simplex"),
+    # Tìm và thay thế biến FREQUENCY_ALLOCATION_VHF bằng đoạn dưới đây:
+    # --- BỔ SUNG DẢI 142-144 MHz CHO WAN DUPLEX ---
+    (142.0000, 144.0000, ['WAN_DUPLEX'], "WAN_DUPLEX"), 
+    (146.0000, 174.0000, ['LAN', 'WAN_SIMPLEX', 'WAN_DUPLEX'], "Dải VHF chính"),
     (146.0000, 146.5000, ['LAN'], "LAN"),
     (146.5000, 147.0000, ['WAN_SIMPLEX'], "WAN Simplex"),
     (147.0000, 149.0000, ['WAN_DUPLEX'], "WAN Duplex"),
