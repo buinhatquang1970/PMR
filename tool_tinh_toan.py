@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 
 EXCEL_COLUMNS = {
     "LICENSE_NO": "Số giấy phép", 
-    "CUSTOMER": "Tên khách hàng", # <-- THÊM CỘT NÀY
+    "CUSTOMER": "Tên khách hàng", 
     "FREQUENCY": "Tần số phát",
     "FREQ_RX": "Tần số thu",
     "BANDWIDTH": "Phương thức phát", 
@@ -30,6 +30,7 @@ EXCEL_COLUMNS = {
 MAX_CANDIDATES = 20000
 
 def chuan_hoa_text(text):
+    """Chuẩn hóa text: bỏ dấu, bỏ ký tự đặc biệt, về chữ hoa để so sánh"""
     if pd.isna(text) or str(text).strip() == "":
         return ""
     text = str(text).strip().lower()
@@ -41,14 +42,17 @@ def chuan_hoa_text(text):
     }
     for regex, replace in patterns.items():
         text = re.sub(regex, replace, text)
+    
+    # Bỏ các từ thông dụng để lọc chính xác tên tỉnh
     text = re.sub(r'thanh pho|tinh|tp\.|tp ', '', text)
+    # Giữ lại chữ cái và số
     text = re.sub(r'[^a-z0-9]', '', text) 
     return text.upper()
 
 class ToolAnDinhTanSo:
     def __init__(self, excel_file):
         importlib.reload(config)
-        self.reserved_frequencies = [] 
+        self.reserved_frequencies = [] # Danh sách tần số giữ chỗ (Lưu động toàn quốc)
         
         file_name = ""
         file_source = excel_file
@@ -57,7 +61,6 @@ class ToolAnDinhTanSo:
         elif isinstance(excel_file, str):
             file_name = excel_file
         
-        # --- ĐỌC FILE ĐƠN GIẢN ---
         self.df = pd.DataFrame()
         try:
             if file_name.lower().endswith('.csv'):
@@ -79,10 +82,11 @@ class ToolAnDinhTanSo:
                                 return col
                     return None
 
+                # Map cột linh hoạt
                 for key, col_name in EXCEL_COLUMNS.items():
                     if col_name in self.df.columns:
                         target = {
-                            "LICENSE_NO": "license", "CUSTOMER": "raw_customer", # <-- MAP TÊN KHÁCH HÀNG
+                            "LICENSE_NO": "license", "CUSTOMER": "raw_customer",
                             "FREQUENCY": "raw_freq", "FREQ_RX": "raw_freq_rx",
                             "BANDWIDTH": "raw_bw", "LAT": "raw_lat",
                             "LON": "raw_lon", "ADDRESS": "raw_address",
@@ -91,13 +95,12 @@ class ToolAnDinhTanSo:
                         }.get(key, key)
                         rename_map[col_name] = target
 
-                # Fallback tìm cột
                 if "raw_freq" not in rename_map.values():
                     col = find_col_by_keyword(["Tần số phát", "Frequency"])
                     if col: rename_map[col] = "raw_freq"
                 
                 if "raw_customer" not in rename_map.values():
-                    col = find_col_by_keyword(["Tên khách hàng", "Khách hàng", "Customer", "Chủ mạng"])
+                    col = find_col_by_keyword(["Tên khách hàng", "Khách hàng", "Customer"])
                     if col: rename_map[col] = "raw_customer"
 
                 if "raw_freq_rx" not in rename_map.values():
@@ -123,10 +126,11 @@ class ToolAnDinhTanSo:
                 if "raw_address" not in rename_map.values():
                     col = find_col_by_keyword(["Địa điểm", "Địa chỉ", "Address"])
                     if col: rename_map[col] = "raw_address"
-                    
-                if "raw_conditions" not in rename_map.values():
-                    col = find_col_by_keyword(["điều kiện", "conditions", "ghi chú"])
-                    if col: rename_map[col] = "raw_conditions"
+                
+                # Cột Tỉnh thành
+                if "raw_province_col" not in rename_map.values():
+                    col = find_col_by_keyword(["Tỉnh thành", "Province", "Tỉnh"])
+                    if col: rename_map[col] = "raw_province_col"
 
                 self.df = self.df.rename(columns=rename_map)
                 self.clean_data()
@@ -178,33 +182,36 @@ class ToolAnDinhTanSo:
 
     def clean_data(self):
         cleaned_rows = []
-        self.reserved_frequencies = [] 
+        self.reserved_frequencies = [] # Reset list giữ chỗ
         
         has_province_col = 'raw_province_col' in self.df.columns
         has_address_col = 'raw_address' in self.df.columns
-        has_conditions_col = 'raw_conditions' in self.df.columns
         has_license_col = 'license' in self.df.columns
-        has_customer_col = 'raw_customer' in self.df.columns # Kiểm tra cột khách hàng
+        has_customer_col = 'raw_customer' in self.df.columns
         
         for idx, row in self.df.iterrows():
+            # 1. Xác định Tỉnh thành để kiểm tra "Lưu động toàn quốc"
             raw_prov_extracted = ""
             if has_province_col:
                 val = str(row.get('raw_province_col', ''))
                 if val.lower() not in ['nan', '', 'none']:
                     raw_prov_extracted = val
             
+            # Nếu không có cột tỉnh, thử lấy từ địa chỉ
             if (not raw_prov_extracted) and has_address_col:
                 parts = str(row.get('raw_address', '')).split(',')
                 raw_prov_extracted = parts[-1] if len(parts) > 0 else str(row.get('raw_address', ''))
             
             clean_prov = chuan_hoa_text(raw_prov_extracted)
             
+            # --- KIỂM TRA TẦN SỐ GIỮ CHỖ (PHỤ LỤC I) ---
+            # Nếu tỉnh là "Lưu động toàn quốc" -> Đánh dấu là giữ chỗ
             is_holding = "LUUDONGTOANQUOC" in clean_prov
-            is_reserved_cond = False 
             
             tx_freqs = self.parse_freq_string(row.get('raw_freq'))
             rx_freqs = self.parse_freq_string(row.get('raw_freq_rx'))
             
+            # Nếu là Lưu động toàn quốc -> Thêm tất cả tần số vào danh sách giữ chỗ
             if is_holding:
                 for f in tx_freqs: self.reserved_frequencies.append(f)
                 for f in rx_freqs: self.reserved_frequencies.append(f)
@@ -214,6 +221,8 @@ class ToolAnDinhTanSo:
             
             has_coords = (lat is not None and lon is not None)
             
+            # Nếu không có tọa độ VÀ không phải lưu động toàn quốc -> Bỏ qua (Không tính được khoảng cách)
+            # Nhưng nếu là Lưu động toàn quốc -> Vẫn giữ để làm bằng chứng giữ chỗ (dù ko tính khoảng cách)
             if not has_coords and not is_holding:
                 continue
 
@@ -223,7 +232,6 @@ class ToolAnDinhTanSo:
             if has_license_col:
                 license_str = str(row.get('license', '')).strip().upper()
             
-            # Lấy tên khách hàng
             customer_str = ""
             if has_customer_col:
                 val = str(row.get('raw_customer', ''))
@@ -246,9 +254,9 @@ class ToolAnDinhTanSo:
                     "has_coords": has_coords, 
                     "province": clean_prov, 
                     "net_type": net_type,
-                    "is_holding": is_holding,
+                    "is_holding": is_holding, # Cờ đánh dấu dòng này là giữ chỗ
                     "license": license_str,
-                    "customer": customer_str # <-- LƯU TÊN KHÁCH HÀNG
+                    "customer": customer_str
                 })
         self.df = pd.DataFrame(cleaned_rows)
 
@@ -338,21 +346,21 @@ class ToolAnDinhTanSo:
         if not is_allocated_mode:
             return {"status": "FAIL", "msg": f"Tần số được quy hoạch cho {allowed_for_freq}, KHÔNG cấp cho {user_input['usage_mode']}.", "conflicts": []}
 
-        is_forbidden = any(r_s <= f_check_rounded <= r_e for r_s, r_e in config.FORBIDDEN_BANDS)
+        # 1. Kiểm tra dải cấm (± 25kHz)
+        is_forbidden = any((r_s - 0.025) <= f_check_rounded <= (r_e + 0.025) for r_s, r_e in config.FORBIDDEN_BANDS)
         if is_forbidden:
-            return {"status": "FAIL", "msg": "Tần số nằm trong dải tần CẤM.", "conflicts": []}
+            return {"status": "FAIL", "msg": "Tần số nằm trong dải tần CẤM (bao gồm biên bảo vệ ±25kHz).", "conflicts": []}
 
         is_shared = any(abs(f_check_rounded - f_shared) < 0.0001 for f_shared in config.SHARED_FREQUENCIES)
         if is_shared:
             return {"status": "FAIL", "msg": "Tần số thuộc kênh DÙNG CHUNG.", "conflicts": []}
 
-        # Kiểm tra giữ chỗ
-        df_holding = self.df[self.df['is_holding'] == True]
-        for _, row in df_holding.iterrows():
-            if abs(f_check - row['freq']) < 0.001:
+        # 2. Kiểm tra tần số giữ chỗ (Lưu động toàn quốc) - Phụ lục I
+        for res_f in self.reserved_frequencies:
+            if abs(f_check_rounded - res_f) < 0.001:
                 return {
                     "status": "FAIL", 
-                    "msg": f"Vướng tần số giữ chỗ/Lưu động toàn quốc. (Số GP: {row['license']}, Tần số gốc: {row['freq']})", 
+                    "msg": f"Vướng tần số giữ chỗ/Lưu động toàn quốc (Tần số: {res_f}).", 
                     "conflicts": []
                 }
 
@@ -383,7 +391,7 @@ class ToolAnDinhTanSo:
 
                 conflicts.append({
                     "license": row['license'],
-                    "customer": row.get('customer', ''), # <-- THÊM KHÁCH HÀNG VÀO KẾT QUẢ
+                    "customer": row.get('customer', ''), 
                     "freq_conflict": row['freq'],
                     "dist_km": round(dist_km, 2),
                     "req_dist_km": req_dist,
@@ -411,6 +419,11 @@ class ToolAnDinhTanSo:
         bad_results = []
         
         for f_check in candidates:
+            # Nếu là reserved thì bỏ qua không cần check nhiễu (vì nó đã không khả dụng rồi)
+            # Hoặc nếu muốn báo cáo nó là không khả dụng vì giữ chỗ?
+            # Theo logic code trước, reserved frequencies bị loại khỏi candidates ngay từ đầu.
+            # Nên ở đây ta check nhiễu với các trạm thường.
+            
             df_subset = self.df[np.abs(self.df['freq'] - f_check) < 0.035]
             
             for _, row in df_subset.iterrows():
@@ -438,7 +451,7 @@ class ToolAnDinhTanSo:
                     bad_results.append({
                         "Tần số (MHz)": f_check,
                         "Số GP bị nhiễu": row['license'],
-                        "Tên Khách Hàng": row.get('customer', ''), # <-- THÊM CỘT TÊN KHÁCH HÀNG
+                        "Tên Khách Hàng": row.get('customer', ''), 
                         "Tần số trạm bị nhiễu (MHz)": row['freq'],
                         "Loại nhiễu": int_type,
                         "Khoảng cách thực tế (km)": round(dist_km, 2),
@@ -461,8 +474,18 @@ class ToolAnDinhTanSo:
                 curr = start_f
                 while curr <= end_f + 0.00001:
                     curr_rounded = round(curr, 5) 
-                    is_forbidden = any(r_s <= curr_rounded <= r_e for r_s, r_e in config.FORBIDDEN_BANDS)
+                    
+                    # 1. Kiểm tra Dải Cấm (± 25kHz)
+                    is_forbidden = any((r_s - 0.025) <= curr_rounded <= (r_e + 0.025) for r_s, r_e in config.FORBIDDEN_BANDS)
+                    
                     is_shared = any(abs(curr_rounded - f_shared) < 0.0001 for f_shared in config.SHARED_FREQUENCIES)
+                    
+                    # 2. Kiểm tra Tần số giữ chỗ (Lưu động toàn quốc)
+                    is_reserved = False
+                    for res_f in self.reserved_frequencies:
+                         if abs(curr_rounded - res_f) < 0.001:
+                             is_reserved = True
+                             break
                     
                     skip_by_note_b = False
                     if usage_mode == 'LAN':
@@ -473,7 +496,7 @@ class ToolAnDinhTanSo:
                         if in_group_2 and (user_province_clean not in allowed_group_2):
                             skip_by_note_b = True
 
-                    if not is_forbidden and not is_shared and not skip_by_note_b:
+                    if not is_forbidden and not is_shared and not skip_by_note_b and not is_reserved:
                         candidates.append(curr_rounded)
                     curr += step_mhz
         
@@ -494,21 +517,8 @@ class ToolAnDinhTanSo:
         raw_input_prov = str(user_input.get('province_code', ''))
         user_province_clean = chuan_hoa_text(raw_input_prov)
         
+        # Tạo danh sách candidates (đã lọc sẵn Reserved & Forbidden)
         candidates = self.generate_candidates(band, bw, mode, user_province_clean)
-        if not candidates: return []
-
-        final_candidates = []
-        for cand in candidates:
-            cand_rounded = round(cand, 5)
-            is_reserved = False
-            for res_f in self.reserved_frequencies:
-                if abs(cand_rounded - round(res_f, 5)) < 0.0001:
-                    is_reserved = True
-                    break
-            if not is_reserved:
-                final_candidates.append(cand)
-        
-        candidates = final_candidates
         if not candidates: return []
 
         df_freqs = self.df['freq'].values
@@ -527,7 +537,6 @@ class ToolAnDinhTanSo:
                     dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
                 except: continue
                 
-                # --- FIX: Bỏ qua nếu trùng tọa độ ---
                 if dist_km == 0: continue
                 
                 delta_f = abs(f_check - row['freq']) * 1000 
