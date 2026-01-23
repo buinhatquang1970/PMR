@@ -43,16 +43,14 @@ def chuan_hoa_text(text):
     for regex, replace in patterns.items():
         text = re.sub(regex, replace, text)
     
-    # Bỏ các từ thông dụng để lọc chính xác tên tỉnh
     text = re.sub(r'thanh pho|tinh|tp\.|tp ', '', text)
-    # Giữ lại chữ cái và số
     text = re.sub(r'[^a-z0-9]', '', text) 
     return text.upper()
 
 class ToolAnDinhTanSo:
     def __init__(self, excel_file):
         importlib.reload(config)
-        self.reserved_frequencies = [] # Danh sách tần số giữ chỗ (Lưu động toàn quốc)
+        self.reserved_frequencies = [] 
         
         file_name = ""
         file_source = excel_file
@@ -82,7 +80,6 @@ class ToolAnDinhTanSo:
                                 return col
                     return None
 
-                # Map cột linh hoạt
                 for key, col_name in EXCEL_COLUMNS.items():
                     if col_name in self.df.columns:
                         target = {
@@ -127,7 +124,6 @@ class ToolAnDinhTanSo:
                     col = find_col_by_keyword(["Địa điểm", "Địa chỉ", "Address"])
                     if col: rename_map[col] = "raw_address"
                 
-                # Cột Tỉnh thành
                 if "raw_province_col" not in rename_map.values():
                     col = find_col_by_keyword(["Tỉnh thành", "Province", "Tỉnh"])
                     if col: rename_map[col] = "raw_province_col"
@@ -141,24 +137,22 @@ class ToolAnDinhTanSo:
 
     def convert_dms_to_decimal(self, dms_str):
         if pd.isna(dms_str): return None
-        s_in = str(dms_str).upper().strip()
+        s_in = str(dms_str).upper().strip().replace(',', '.')
         try:
-            val = float(s_in.replace(',', '.'))
+            val = float(s_in)
             if 0 < abs(val) < 180: return val
         except: pass
-        nums = re.findall(r"(\d+)[.,]?(\d*)", s_in)
-        valid_nums = []
-        for n in nums:
-            if n[0]: 
-                val_str = n[0] + ("." + n[1] if n[1] else "")
-                valid_nums.append(float(val_str))
-        if len(valid_nums) >= 3:
-            d, m, s = valid_nums[0], valid_nums[1], valid_nums[2]
-            if d > 180 or m >= 60: return None
-            return d + m/60 + s/3600
-        elif len(valid_nums) == 2:
-             d, m = valid_nums[0], valid_nums[1]
-             return d + m/60
+        numbers = re.findall(r"(\d+(?:\.\d+)?)", s_in)
+        if len(numbers) >= 2: 
+            try:
+                d = float(numbers[0])
+                m = float(numbers[1])
+                s = float(numbers[2]) if len(numbers) > 2 else 0.0
+                decimal = d + (m / 60.0) + (s / 3600.0)
+                if 'S' in s_in or 'W' in s_in: decimal = -decimal
+                if abs(decimal) > 180: return None
+                return decimal
+            except: return None
         return None
 
     def parse_bandwidth(self, emission_code):
@@ -180,9 +174,33 @@ class ToolAnDinhTanSo:
             except: pass
         return freqs
 
+    # --- HÀM QUAN TRỌNG: ƯU TIÊN WAN TRONG DẢI DÙNG CHUNG ---
+    def infer_net_type_from_freq(self, f_val):
+        """
+        Xác định loại mạng dựa trên quy hoạch tần số.
+        Nguyên tắc ưu tiên: Nếu dải tần dùng chung (LAN + WAN), bắt buộc áp dụng chỉ tiêu WAN.
+        Thứ tự ưu tiên: WAN_SIMPLEX > WAN_DUPLEX > LAN
+        """
+        alloc = []
+        if 130 <= f_val <= 180: alloc = config.FREQUENCY_ALLOCATION_VHF
+        elif 380 <= f_val <= 500: alloc = config.FREQUENCY_ALLOCATION_UHF
+        
+        for start, end, modes, _ in alloc:
+            if start <= f_val <= end:
+                # Nếu trong danh sách mode có WAN_SIMPLEX -> Ưu tiên cao nhất (Bảo vệ ~140km)
+                if "WAN_SIMPLEX" in modes: return "WAN_SIMPLEX"
+                
+                # Nếu trong danh sách mode có WAN_DUPLEX -> Ưu tiên nhì (Bảo vệ ~100km)
+                if "WAN_DUPLEX" in modes: return "WAN_DUPLEX"
+                
+                # Nếu chỉ có LAN thì mới trả về LAN
+                return "LAN"
+                
+        return "LAN" # Mặc định nếu không tìm thấy trong quy hoạch
+
     def clean_data(self):
         cleaned_rows = []
-        self.reserved_frequencies = [] # Reset list giữ chỗ
+        self.reserved_frequencies = [] 
         
         has_province_col = 'raw_province_col' in self.df.columns
         has_address_col = 'raw_address' in self.df.columns
@@ -190,28 +208,23 @@ class ToolAnDinhTanSo:
         has_customer_col = 'raw_customer' in self.df.columns
         
         for idx, row in self.df.iterrows():
-            # 1. Xác định Tỉnh thành để kiểm tra "Lưu động toàn quốc"
             raw_prov_extracted = ""
             if has_province_col:
                 val = str(row.get('raw_province_col', ''))
                 if val.lower() not in ['nan', '', 'none']:
                     raw_prov_extracted = val
             
-            # Nếu không có cột tỉnh, thử lấy từ địa chỉ
             if (not raw_prov_extracted) and has_address_col:
                 parts = str(row.get('raw_address', '')).split(',')
                 raw_prov_extracted = parts[-1] if len(parts) > 0 else str(row.get('raw_address', ''))
             
             clean_prov = chuan_hoa_text(raw_prov_extracted)
             
-            # --- KIỂM TRA TẦN SỐ GIỮ CHỖ (PHỤ LỤC I) ---
-            # Nếu tỉnh là "Lưu động toàn quốc" -> Đánh dấu là giữ chỗ
             is_holding = "LUUDONGTOANQUOC" in clean_prov
             
             tx_freqs = self.parse_freq_string(row.get('raw_freq'))
             rx_freqs = self.parse_freq_string(row.get('raw_freq_rx'))
             
-            # Nếu là Lưu động toàn quốc -> Thêm tất cả tần số vào danh sách giữ chỗ
             if is_holding:
                 for f in tx_freqs: self.reserved_frequencies.append(f)
                 for f in rx_freqs: self.reserved_frequencies.append(f)
@@ -221,13 +234,11 @@ class ToolAnDinhTanSo:
             
             has_coords = (lat is not None and lon is not None)
             
-            # Nếu không có tọa độ VÀ không phải lưu động toàn quốc -> Bỏ qua (Không tính được khoảng cách)
-            # Nhưng nếu là Lưu động toàn quốc -> Vẫn giữ để làm bằng chứng giữ chỗ (dù ko tính khoảng cách)
             if not has_coords and not is_holding:
                 continue
 
             bw = self.parse_bandwidth(row.get('raw_bw'))
-            net_type = "LAN"
+            
             license_str = ""
             if has_license_col:
                 license_str = str(row.get('license', '')).strip().upper()
@@ -238,14 +249,17 @@ class ToolAnDinhTanSo:
                 if val.lower() not in ['nan', 'none']:
                     customer_str = val.strip()
 
-            if "WAN" in license_str: net_type = "WAN_SIMPLEX" 
-            
             all_freqs_to_check = []
             for f in tx_freqs: all_freqs_to_check.append(f)
             for f in rx_freqs: all_freqs_to_check.append(f)
             all_freqs_to_check = list(set(all_freqs_to_check))
 
             for f in all_freqs_to_check:
+                # --- UPDATE: Gán loại mạng theo nguyên tắc ưu tiên ---
+                # Ví dụ: 419.0 MHz (thuộc 418.5-419.5, có LAN + WAN_DUPLEX)
+                # Hàm infer sẽ trả về "WAN_DUPLEX" -> Áp dụng chỉ tiêu cao hơn.
+                net_type = self.infer_net_type_from_freq(f)
+                
                 cleaned_rows.append({
                     "freq": f, 
                     "bw": bw, 
@@ -254,7 +268,7 @@ class ToolAnDinhTanSo:
                     "has_coords": has_coords, 
                     "province": clean_prov, 
                     "net_type": net_type,
-                    "is_holding": is_holding, # Cờ đánh dấu dòng này là giữ chỗ
+                    "is_holding": is_holding, 
                     "license": license_str,
                     "customer": customer_str
                 })
@@ -289,6 +303,12 @@ class ToolAnDinhTanSo:
         if is_intra_lan or is_intra_wan:
             matrix = config.MATRIX_VHF if band == 'VHF' else config.MATRIX_UHF
             table_key = user_scenario_key
+            # Nếu tần số DB là WAN_SIMPLEX hoặc WAN_DUPLEX, ta phải dùng bảng WAN tương ứng
+            # để tính khoảng cách bảo vệ cho trạm đó, bất kể user đang xin là gì (theo logic an toàn)
+            # Tuy nhiên theo logic ma trận chéo, ta xử lý ở phần else nếu khác loại.
+            # Ở đây xử lý trường hợp cùng loại (Intra):
+            if is_intra_wan:
+                table_key = user_main_mode 
         else:
             matrix = config.MATRIX_CROSS
             if "LAN" in user_main_mode and "WAN_SIMPLEX" in db_net_type: table_key = "LAN_VS_WAN_SIMPLEX"
@@ -346,7 +366,6 @@ class ToolAnDinhTanSo:
         if not is_allocated_mode:
             return {"status": "FAIL", "msg": f"Tần số được quy hoạch cho {allowed_for_freq}, KHÔNG cấp cho {user_input['usage_mode']}.", "conflicts": []}
 
-        # 1. Kiểm tra dải cấm (± 25kHz)
         is_forbidden = any((r_s - 0.025) <= f_check_rounded <= (r_e + 0.025) for r_s, r_e in config.FORBIDDEN_BANDS)
         if is_forbidden:
             return {"status": "FAIL", "msg": "Tần số nằm trong dải tần CẤM (bao gồm biên bảo vệ ±25kHz).", "conflicts": []}
@@ -355,7 +374,6 @@ class ToolAnDinhTanSo:
         if is_shared:
             return {"status": "FAIL", "msg": "Tần số thuộc kênh DÙNG CHUNG.", "conflicts": []}
 
-        # 2. Kiểm tra tần số giữ chỗ (Lưu động toàn quốc) - Phụ lục I
         for res_f in self.reserved_frequencies:
             if abs(f_check_rounded - res_f) < 0.001:
                 return {
@@ -419,11 +437,6 @@ class ToolAnDinhTanSo:
         bad_results = []
         
         for f_check in candidates:
-            # Nếu là reserved thì bỏ qua không cần check nhiễu (vì nó đã không khả dụng rồi)
-            # Hoặc nếu muốn báo cáo nó là không khả dụng vì giữ chỗ?
-            # Theo logic code trước, reserved frequencies bị loại khỏi candidates ngay từ đầu.
-            # Nên ở đây ta check nhiễu với các trạm thường.
-            
             df_subset = self.df[np.abs(self.df['freq'] - f_check) < 0.035]
             
             for _, row in df_subset.iterrows():
@@ -475,12 +488,9 @@ class ToolAnDinhTanSo:
                 while curr <= end_f + 0.00001:
                     curr_rounded = round(curr, 5) 
                     
-                    # 1. Kiểm tra Dải Cấm (± 25kHz)
                     is_forbidden = any((r_s - 0.025) <= curr_rounded <= (r_e + 0.025) for r_s, r_e in config.FORBIDDEN_BANDS)
-                    
                     is_shared = any(abs(curr_rounded - f_shared) < 0.0001 for f_shared in config.SHARED_FREQUENCIES)
                     
-                    # 2. Kiểm tra Tần số giữ chỗ (Lưu động toàn quốc)
                     is_reserved = False
                     for res_f in self.reserved_frequencies:
                          if abs(curr_rounded - res_f) < 0.001:
@@ -517,7 +527,6 @@ class ToolAnDinhTanSo:
         raw_input_prov = str(user_input.get('province_code', ''))
         user_province_clean = chuan_hoa_text(raw_input_prov)
         
-        # Tạo danh sách candidates (đã lọc sẵn Reserved & Forbidden)
         candidates = self.generate_candidates(band, bw, mode, user_province_clean)
         if not candidates: return []
 
