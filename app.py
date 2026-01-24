@@ -5,7 +5,9 @@ import io
 import os
 import html
 import logging
-from datetime import datetime
+# from datetime import datetime
+# Thêm timedelta và timezone để xử lý cộng giờ
+from datetime import datetime, timedelta, timezone
 from tool_tinh_toan import ToolAnDinhTanSo
 import importlib
 
@@ -27,12 +29,17 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- APP VERSION ---
-# --- APP VERSION TỰ ĐỘNG (KIỂU V + SỐ) ---
+# --- APP VERSION TỰ ĐỘNG (FIX MÚI GIỜ VIỆT NAM GMT+7) ---
 try:
     file_timestamp = os.path.getmtime(__file__)
-    # %y: Năm 2 số, %m: Tháng, %d: Ngày, %H: Giờ, %M: Phút
-    # Ví dụ kết quả: V260124.1630 (Sửa ngày 24/01/2026 lúc 16:30)
-    APP_VERSION = "V" + datetime.fromtimestamp(file_timestamp).strftime("%y%m%d.%H%M")
+    
+    # Tạo múi giờ Việt Nam (UTC +7)
+    vn_timezone = timezone(timedelta(hours=7))
+    
+    # Chuyển đổi timestamp sang giờ Việt Nam
+    dt_vn = datetime.fromtimestamp(file_timestamp, vn_timezone)
+    
+    APP_VERSION = "V" + dt_vn.strftime("%y%m%d.%H%M")
 except Exception:
     APP_VERSION = "Unknown"
 
