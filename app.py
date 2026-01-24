@@ -9,20 +9,32 @@ from datetime import datetime
 from tool_tinh_toan import ToolAnDinhTanSo
 import importlib
 
-# --- IMPORT AN TOÀN CHO BIẾN MÀU SẮC ---
+# --- IMPORT AN TOÀN CHO BIẾN MÀU SẮC & QUY HOẠCH TẦN SỐ ---
 try:
     import config
     importlib.reload(config) # Reload tại đây để cập nhật màu mới nhất
     PRIORITY_HIGHLIGHT_COLOR = getattr(config, 'PRIORITY_HIGHLIGHT_COLOR', '#F6BE00')
+    # Lấy bảng phân bổ để hiển thị lên Combobox
+    ALLOC_VHF = getattr(config, 'FREQUENCY_ALLOCATION_VHF', [])
+    ALLOC_UHF = getattr(config, 'FREQUENCY_ALLOCATION_UHF', [])
 except:
     PRIORITY_HIGHLIGHT_COLOR = '#F6BE00' # Màu mặc định nếu lỗi
+    ALLOC_VHF = []
+    ALLOC_UHF = []
 
 # Setup logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- APP VERSION ---
-APP_VERSION = "2.2"
+# --- APP VERSION TỰ ĐỘNG (KIỂU V + SỐ) ---
+try:
+    file_timestamp = os.path.getmtime(__file__)
+    # %y: Năm 2 số, %m: Tháng, %d: Ngày, %H: Giờ, %M: Phút
+    # Ví dụ kết quả: V260124.1630 (Sửa ngày 24/01/2026 lúc 16:30)
+    APP_VERSION = "V" + datetime.fromtimestamp(file_timestamp).strftime("%y%m%d.%H%M")
+except Exception:
+    APP_VERSION = "Unknown"
 
 # --- CẤU HÌNH GIAO DIỆN ---
 st.set_page_config(page_title=f"PMR tool (v{APP_VERSION})", layout="wide")
@@ -44,14 +56,25 @@ if 'bad_freq_results' not in st.session_state:
     st.session_state.bad_freq_results = None
 if 'active_view' not in st.session_state:
     st.session_state.active_view = None 
+if 'scan_range_display' not in st.session_state:
+    st.session_state.scan_range_display = ""
 
 # CSS TÙY CHỈNH NÂNG CAO
 st.markdown("""
     <style>
-        /* header[data-testid="stHeader"] { display: none; } */
-           
-        /* Tăng padding-top lên 3.5rem để đẩy nội dung xuống thấp hơn, tránh bị che khuất banner */
-        .block-container { padding-top: 3.5rem !important; padding-bottom: 2rem; }
+        /* 1. ẨN THANH MENU VÀ THANH TRANG TRÍ MẶC ĐỊNH */
+        header[data-testid="stHeader"] {
+            display: none;
+        }
+        div[data-testid="stDecoration"] {
+            display: none;
+        }
+        
+        /* 2. ĐẨY SÁT NỘI DUNG LÊN TRÊN CÙNG (Không còn bị xén nữa vì Header đã ẩn) */
+        .block-container { 
+            padding-top: 0rem !important; 
+            padding-bottom: 2rem; 
+        }
         
         h2 { font-size: 1.3rem !important; margin-top: 0.5rem; margin-bottom: 0.2rem !important; }
         h3 { font-size: 0.95rem !important; padding-top: 0.2rem !important; padding-bottom: 0.2rem !important; }
@@ -59,43 +82,40 @@ st.markdown("""
         [data-testid="stHorizontalBlock"] { gap: 0.1rem !important; }
         .stCaption { font-size: 0.7rem; margin-top: -5px; color: #555; }
         hr { margin-top: 0.5rem !important; margin-bottom: 0.5rem !important; }
-        [data-testid='stFileUploader'] { height: 65px !important; overflow: hidden !important; margin-bottom: 0px !important; padding-top: 0px; }
-        [data-testid='stFileUploader'] section { padding: 0.5rem !important; min-height: 0px !important; }
+        
+        /* --- CSS CHO FILE UPLOADER (CĂN CHỈNH KHOẢNG CÁCH) --- */
+        [data-testid='stFileUploader'] {
+            margin-bottom: -30px !important; /* Kéo nội dung bên dưới lên sát hơn */
+        }
+        
+        [data-testid='stFileUploader'] section { 
+            padding: 0.5rem !important; 
+            min-height: 0px !important; 
+        }
         [data-testid='stFileUploader'] section > div > div > span { display: none; }
-        [data-testid='stFileUploader'] section > div > div::after { content: "Nhập file Excel (.xlsx)"; display: block; font-weight: bold; color: #333; }
+        [data-testid='stFileUploader'] section > div > div::after { 
+            content: "Lưu ý: Chỉ nhận file Excel(.xlsx)"; 
+            display: block; 
+            font-weight: bold; 
+            color: #333; 
+        }
         [data-testid='stFileUploader'] section small { display: none; }
+
         div[data-testid="stColumn"] button[kind="secondary"] { color: #d93025 !important; font-weight: bold !important; border: 1px solid #ddd !important; background-color: #fff !important; width: 100%; transition: all 0.3s; }
         div[data-testid="stColumn"] button[kind="secondary"]:hover { background-color: #fce8e6 !important; border-color: #d93025 !important; color: #d93025 !important; }
         button[kind="primary"] { font-weight: bold !important; margin-top: 5px; }
+        
+        /* Table styles */
         div[data-testid="stTable"] table { width: 100% !important; }
         div[data-testid="stTable"] th { background-color: #f0f2f6 !important; color: #31333F !important; font-size: 1.2rem !important; font-weight: 800 !important; text-align: center !important; white-space: nowrap !important; padding: 15px !important; }
         div[data-testid="stTable"] td { font-size: 1.1rem !important; text-align: center !important; vertical-align: middle !important; padding: 12px !important; min-width: 200px !important; }
+        
+        /* Popup map styles */
         div[role="dialog"] { width: 50vw !important; max-width: 50vw !important; left: auto !important; right: 0 !important; top: 0 !important; bottom: 0 !important; height: 100vh !important; margin: 0 !important; border-radius: 0 !important; transform: none !important; display: flex; flex-direction: column; }
+        
+        /* Input styles */
         div[data-testid="stSelectbox"] > div, div[data-testid="stSelectbox"] button, div[data-testid="stSelectbox"] select { min-width: 60px !important; max-width: 100% !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; display: inline-block !important; }
         .stTextInput, .stSelectbox, .stNumberInput, .stDateInput { min-width: 50px !important; }
-        /* Mặc định trên PC: Giữ gọn gàng */
-        @media (min-width: 768px) {
-            [data-testid='stFileUploader'] { 
-                height: 65px !important; 
-                overflow: hidden !important; 
-                margin-bottom: 0px !important; 
-                padding-top: 0px; 
-            }
-        }
-
-        /* Trên Mobile: Thả lỏng chiều cao để nút Browse không bị mất */
-        @media (max-width: 767px) {
-            [data-testid='stFileUploader'] { 
-                height: auto !important; 
-                min-height: 80px !important;
-                overflow: visible !important; 
-                margin-bottom: 10px !important; 
-            }
-            /* Tăng kích thước vùng bấm cho dễ thao tác trên điện thoại */
-            [data-testid='stFileUploader'] section {
-                min-height: 60px !important;
-            }
-        }        
     </style>
 """, unsafe_allow_html=True)
 
@@ -162,12 +182,11 @@ def show_map_popup(lat, lon):
 
 banner_file = "logo_CTS.jpg" 
 if os.path.exists(banner_file):
-    # Hiển thị ảnh gốc, không ép size
     st.image(banner_file)
 else:
     st.warning(f"⚠️ Chưa tìm thấy file '{banner_file}'.")
 
-st.markdown("<h2 style='text-align: center; color: #0068C9;'>Ấn định tần số cho mạng nội bộ dùng riêng</h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center; color: #0068C9;'>Ấn định tần số cho mạng nội bộ dùng riêng </h2>", unsafe_allow_html=True)
 st.markdown(f"<div style='text-align: right; color: #666; font-size:0.85rem; margin-top:-8px;'>Phiên bản: {APP_VERSION}</div>", unsafe_allow_html=True)
 st.markdown("---")
 
@@ -199,24 +218,62 @@ with col_layout_left:
             if st.button("👉 Xem vị trí trên bản đồ", use_container_width=True): show_map_popup(lat, lon)
         else: st.button("👉 Xem vị trí trên bản đồ", disabled=True, use_container_width=True)
 
-    # --- CẤU HÌNH TỶ LỆ CỘT GỌN GÀNG (GIỮ NGUYÊN THEO YÊU CẦU) ---
-    c_mode, c1, c2, c3, c4, c5 = st.columns([1.2, 0.6, 0.7, 0.8, 1.0, 0.8], gap="small")
+    # --- CẤU HÌNH TỶ LỆ CỘT GỌN GÀNG (ĐÃ CẬP NHẬT SUB-BAND) ---
+    c_mode, c_h, c_band, c_subband, c_bw = st.columns([1.0, 0.6, 0.7, 1.8, 0.8], gap="small")
     
     with c_mode:
         st.markdown("📡 **Loại mạng**")
         mode = st.selectbox("Loại mạng", ["LAN", "WAN_SIMPLEX", "WAN_DUPLEX"], label_visibility="collapsed")
 
-    with c1:
+    with c_h:
         st.markdown("**Độ cao (m)**")
         h_anten = st.number_input("Độ cao", value=0.0, step=1.0, label_visibility="collapsed")
-    with c2:
+    
+    with c_band:
         st.markdown("**Dải tần**")
         band = st.selectbox("Dải tần", ["VHF", "UHF"], label_visibility="collapsed")
-    with c3:
+        
+    with c_subband:
+        st.markdown("**Đoạn băng tần quét**")
+        # 1. Xác định bảng quy hoạch dựa trên VHF/UHF
+        if band == "VHF":
+            current_alloc = ALLOC_VHF
+        else:
+            current_alloc = ALLOC_UHF
+            
+        subband_map = {}
+        subband_labels = []
+        
+        # 2. Duyệt qua bảng quy hoạch và LỌC
+        for item in current_alloc:
+            s_f, e_f, m_list, note = item
+            
+            # --- LOGIC MỚI: CHỈ LẤY DẢI CÓ CHỨA LOẠI MẠNG ĐANG CHỌN ---
+            # m_list là danh sách các mạng được phép (VD: ['LAN', 'WAN_SIMPLEX'])
+            # mode là loại mạng người dùng đang chọn (VD: "WAN_SIMPLEX")
+            if mode in m_list:
+                label = f"{s_f} - {e_f} MHz ({note})"
+                subband_map[label] = (s_f, e_f)
+                subband_labels.append(label)
+        
+        # Xử lý trường hợp không tìm thấy (đề phòng)
+        if not subband_labels:
+            subband_labels = ["Không có dải phù hợp"]
+            subband_map["Không có dải phù hợp"] = (0, 0)
+            
+        selected_subband_label = st.selectbox("Chọn dải con", subband_labels, label_visibility="collapsed")
+        scan_start, scan_end = subband_map.get(selected_subband_label, (0, 0))
+
+    with c_bw:
         st.markdown("**Băng thông**")
         bw = st.selectbox("Băng thông", [6.25, 12.5, 25.0], index=1, label_visibility="collapsed")
     
-    with c4:
+    # Hàng 2: Tỉnh thành và Số lượng
+    # --- CẬP NHẬT: SỬ DỤNG 3 CỘT ĐỂ THU NHỎ KÍCH THƯỚC ---
+    # c_empty đóng vai trò là khoảng trắng bên phải để không bị kéo giãn
+    c_prov, c_qty, c_empty = st.columns([1.2, 0.8, 3.0], gap="small") 
+    
+    with c_prov:
         st.markdown("**Tỉnh / Thành phố**")
         is_wan = "WAN" in mode
         province_selection = st.selectbox("Chọn Tỉnh/TP", ["-- Chọn Tỉnh/TP --", "HANOI", "HCM", "DANANG", "KHAC"], index=0, label_visibility="collapsed", disabled=is_wan)
@@ -224,14 +281,17 @@ with col_layout_left:
         if province_selection == "KHAC" and not is_wan:
             province_manual_input = st.text_input("Nhập tên Tỉnh/TP cụ thể:", placeholder="Ví dụ: Bà Rịa Vũng Tàu", label_visibility="collapsed")
     
-    with c5:
+    with c_qty:
         st.markdown("**Số lượng tần số**")
         qty = st.number_input("Số lượng", value=1, min_value=1, label_visibility="collapsed")
+        
+    with c_empty:
+        st.empty() # Cột này để trống hoàn toàn
 
 with col_layout_right:
     st.subheader("2. NẠP DỮ LIỆU ĐẦU VÀO")
     
-    # --- CHỈNH SỬA: BỎ type=['xlsx'] ĐỂ CODE PYTHON TỰ BẮT LỖI ---
+    # --- UPLOAD FILE ---
     uploaded_file = st.file_uploader("Label ẩn", type=None, label_visibility="collapsed")
     
     btn_disabled = True # Mặc định là khóa
@@ -242,14 +302,12 @@ with col_layout_right:
             st.error(f"File quá lớn (> {MAX_UPLOAD_MB} MB).")
             btn_disabled = True
         elif not uploaded_file.name.lower().endswith('.xlsx'):
-            # --- BÁO LỖI NẾU KHÔNG PHẢI XLSX ---
             st.error("⚠️ Cần nhập file định dạng xlsx")
             btn_disabled = True
         else:
             # File hợp lệ
             current_file_id = f"{uploaded_file.name}_{getattr(uploaded_file, 'size', '')}"
             if st.session_state.last_uploaded_file_id != current_file_id:
-                # RESET TOÀN BỘ KHI CÓ FILE MỚI HỢP LỆ
                 st.session_state.results = None
                 st.session_state.input_snapshot = None
                 st.session_state.check_result = None
@@ -258,12 +316,8 @@ with col_layout_right:
                 st.session_state.last_uploaded_file_id = current_file_id
                 st.rerun() 
             
-            safe_name = html.escape(uploaded_file.name)
-            file_status_html = f"✅ Đã nhận: {safe_name}"
-            st.markdown(f"<div style='height: 20px; margin-top: 2px; color: #28a745; font-weight: 500; font-size: 0.8rem;'>{file_status_html}</div>", unsafe_allow_html=True)
-            btn_disabled = False # Mở khóa nút bấm
+            btn_disabled = False 
     else:
-        # Nếu chưa chọn file hoặc đã xóa file
         if st.session_state.last_uploaded_file_id is not None:
             st.session_state.results = None
             st.session_state.input_snapshot = None
@@ -272,7 +326,9 @@ with col_layout_right:
             st.session_state.active_view = None
             st.session_state.last_uploaded_file_id = None
             st.rerun()
-        st.markdown(f"<div style='height: 20px; margin-top: 2px; color: #28a745; font-weight: 500; font-size: 0.8rem;'> </div>", unsafe_allow_html=True)
+    
+    # --- CĂN CHỈNH NÚT BẤM (KÉO LÊN CAO) ---
+    st.markdown('<div style="margin-top: -25px;"></div>', unsafe_allow_html=True)
     
     c_btn1, c_btn2 = st.columns(2)
     with c_btn1:
@@ -283,8 +339,8 @@ with col_layout_right:
 st.markdown("---")
 st.subheader("3. KIỂM TRA TẦN SỐ CỤ THỂ")
 
-# c_check_1, c_check_2 = st.columns([1, 4])
-c_check_1, c_check_2 = st.columns([0.5, 4.5])
+# --- ĐÃ CHỈNH SỬA TỶ LỆ CỘT TẠI ĐÂY (0.5, 4.5) ĐỂ THU NHỎ Ô NHẬP ---
+c_check_1, c_check_2 = st.columns([0.5, 4.5]) 
 with c_check_1:
     f_check_val = st.number_input("Nhập tần số (MHz):", value=0.0, step=0.0125, format="%.4f")
 with c_check_2:
@@ -301,6 +357,8 @@ if btn_calc:
     st.session_state.check_result = None
     st.session_state.bad_freq_results = None
     st.session_state.active_view = "AVAILABLE"
+    # Lưu hiển thị
+    st.session_state.scan_range_display = f"{scan_start} - {scan_end} MHz"
     
     error_msg = []
     if lon == 0.0: error_msg.append("Kinh độ chưa nhập")
@@ -325,13 +383,14 @@ if btn_calc:
                     "lat": lat, "lon": lon,
                     "province_code": prov_to_send,
                     "antenna_height": h_anten,
-                    "band": band, "bw": bw, "usage_mode": mode
+                    "band": band, "bw": bw, "usage_mode": mode,
+                    "scan_start": scan_start, "scan_end": scan_end # <-- ĐÃ CẬP NHẬT
                 }
                 results = tool.tinh_toan(user_input)
                 st.session_state.results = results
                 st.session_state.input_snapshot = {
-                    "THAM SỐ": ["Phiên bản App", "Kinh độ (Decimal)", "Vĩ độ (Decimal)", "Kinh độ (DMS)", "Vĩ độ (DMS)", "Tỉnh / Thành phố", "Độ cao Anten (m)", "Dải tần", "Băng thông (kHz)", "Loại mạng", "Số lượng xin"],
-                    "GIÁ TRỊ": [APP_VERSION, lon, lat, f"{lon_d}° {lon_m}' {lon_s}\"", f"{lat_d}° {lat_m}' {lat_s}\"", prov_to_send if "LAN" in mode else "Toàn quốc (WAN)", h_anten, band, bw, mode, qty]
+                    "THAM SỐ": ["Phiên bản App", "Kinh độ (Decimal)", "Vĩ độ (Decimal)", "Kinh độ (DMS)", "Vĩ độ (DMS)", "Tỉnh / Thành phố", "Độ cao Anten (m)", "Dải tần", "Phạm vi quét", "Băng thông (kHz)", "Loại mạng", "Số lượng xin"],
+                    "GIÁ TRỊ": [APP_VERSION, lon, lat, f"{lon_d}° {lon_m}' {lon_s}\"", f"{lat_d}° {lat_m}' {lat_s}\"", prov_to_send if "LAN" in mode else "Toàn quốc (WAN)", h_anten, band, st.session_state.scan_range_display, bw, mode, qty]
                 }
             except Exception as e:
                 logger.exception("Lỗi khi tính toán", exc_info=e)
@@ -343,6 +402,8 @@ if btn_scan_bad_freq:
     st.session_state.results = None
     st.session_state.check_result = None
     st.session_state.active_view = "UNAVAILABLE"
+    # Lưu hiển thị
+    st.session_state.scan_range_display = f"{scan_start} - {scan_end} MHz"
     
     if uploaded_file is None:
         st.error("Vui lòng nạp file Excel trước.")
@@ -355,22 +416,23 @@ if btn_scan_bad_freq:
         if province_selection == "KHAC": prov_to_send = province_manual_input
         if "WAN" in mode: prov_to_send = "KHAC"
         
-        with st.spinner("Đang quét toàn bộ dải tần..."):
+        with st.spinner("Đang quét dải tần đã chọn..."):
             try:
                 tool = ToolAnDinhTanSo(uploaded_file)
                 user_input = {
                     "lat": lat, "lon": lon,
                     "province_code": prov_to_send,
                     "antenna_height": h_anten,
-                    "band": band, "bw": bw, "usage_mode": mode
+                    "band": band, "bw": bw, "usage_mode": mode,
+                    "scan_start": scan_start, "scan_end": scan_end # <-- ĐÃ CẬP NHẬT
                 }
                 bad_results = tool.tim_cac_tan_so_khong_kha_dung(user_input)
                 st.session_state.bad_freq_results = bad_results
                 
                 # --- LƯU LẠI INPUT SNAPSHOT ---
                 st.session_state.input_snapshot = {
-                    "THAM SỐ": ["Phiên bản App", "Kinh độ (Decimal)", "Vĩ độ (Decimal)", "Kinh độ (DMS)", "Vĩ độ (DMS)", "Tỉnh / Thành phố", "Độ cao Anten (m)", "Dải tần", "Băng thông (kHz)", "Loại mạng", "Số lượng xin"],
-                    "GIÁ TRỊ": [APP_VERSION, lon, lat, f"{lon_d}° {lon_m}' {lon_s}\"", f"{lat_d}° {lat_m}' {lat_s}\"", prov_to_send if "LAN" in mode else "Toàn quốc (WAN)", h_anten, band, bw, mode, qty]
+                    "THAM SỐ": ["Phiên bản App", "Kinh độ (Decimal)", "Vĩ độ (Decimal)", "Kinh độ (DMS)", "Vĩ độ (DMS)", "Tỉnh / Thành phố", "Độ cao Anten (m)", "Dải tần", "Phạm vi quét", "Băng thông (kHz)", "Loại mạng", "Số lượng xin"],
+                    "GIÁ TRỊ": [APP_VERSION, lon, lat, f"{lon_d}° {lon_m}' {lon_s}\"", f"{lat_d}° {lat_m}' {lat_s}\"", prov_to_send if "LAN" in mode else "Toàn quốc (WAN)", h_anten, band, st.session_state.scan_range_display, bw, mode, qty]
                 }
                 
             except Exception as e:
@@ -421,11 +483,11 @@ if btn_check_specific:
 # VIEW 1: KẾT QUẢ TẦN SỐ KHẢ DỤNG
 if st.session_state.active_view == "AVAILABLE" and st.session_state.results is not None:
     st.markdown("---")
-    st.subheader("📊 KẾT QUẢ TÍNH TOÁN: TẦN SỐ KHẢ DỤNG")
+    st.subheader(f"📊 KẾT QUẢ TÍNH TOÁN: TẦN SỐ KHẢ DỤNG (Phạm vi quét: {st.session_state.scan_range_display})")
     results = st.session_state.results
     
     if not results:
-        st.error("❌ Không tìm thấy tần số khả dụng!")
+        st.error("❌ Không tìm thấy tần số khả dụng trong dải quét!")
     else:
         df_res = pd.DataFrame(results)
         cols_display = ["STT", "frequency", "reuse_factor", "license_list"]
@@ -486,24 +548,24 @@ if st.session_state.active_view == "AVAILABLE" and st.session_state.results is n
 # VIEW 2: KẾT QUẢ TẦN SỐ KHÔNG KHẢ DỤNG
 elif st.session_state.active_view == "UNAVAILABLE" and st.session_state.bad_freq_results is not None:
     st.markdown("---")
-#    st.subheader("⚠️ CÁC TẦN SỐ KHÔNG KHẢ DỤNG (GÂY NHIỄU)")
+    st.subheader(f"⚠️ CÁC TẦN SỐ KHÔNG KHẢ DỤNG (Phạm vi quét: {st.session_state.scan_range_display})")
     
     bad_list = st.session_state.bad_freq_results
     if not bad_list:
-        st.info("Tuyệt vời! Không tìm thấy tần số nào bị nhiễu (trong dải quy hoạch). Tất cả đều khả dụng.")
+        st.info("Tuyệt vời! Không tìm thấy tần số nào bị nhiễu (trong dải quét).")
     else:
         st.warning(f"⚠️ Tìm thấy {len(bad_list)} trường hợp tần số gây nhiễu (không khả dụng).")
         df_bad = pd.DataFrame(bad_list)
         
-        # --- CẤU HÌNH CỘT ĐỂ GIẢM ĐỘ RỘNG CỘT KHÁCH HÀNG ---
+        # --- CẤU HÌNH CỘT ĐỂ ĐIỀU CHỈNH ĐỘ RỘNG ---
         st.dataframe(
             df_bad, 
             use_container_width=True,
             column_config={
-                "Tên Khách Hàng": st.column_config.TextColumn(width="medium"), # 
-                "Địa chỉ trạm bị nhiễu": st.column_config.TextColumn(width="small"), # 
-                "Khoảng cách thực tế (km)": st.column_config.TextColumn(width="small"), # 
-                "Khoảng cách yêu cầu (km)": st.column_config.TextColumn(width="small"), 
+                "Tên Khách Hàng": st.column_config.TextColumn(width="large"), # Rộng ra
+                "Địa chỉ trạm bị nhiễu": st.column_config.TextColumn(width="medium"), # Vừa phải
+                "Khoảng cách thực tế (km)": st.column_config.NumberColumn(width="small", format="%.2f"), # Nhỏ lại
+                "Khoảng cách yêu cầu (km)": st.column_config.NumberColumn(width="small", format="%.2f"), # Nhỏ lại
                 "Tần số (MHz)": st.column_config.NumberColumn(format="%.4f"),
                 "Tần số trạm bị nhiễu (MHz)": st.column_config.NumberColumn(format="%.4f"),
             }

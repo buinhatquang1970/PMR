@@ -30,7 +30,6 @@ EXCEL_COLUMNS = {
 MAX_CANDIDATES = 20000
 
 def chuan_hoa_text(text):
-    """Chuẩn hóa text: bỏ dấu, bỏ ký tự đặc biệt, về chữ hoa để so sánh"""
     if pd.isna(text) or str(text).strip() == "":
         return ""
     text = str(text).strip().lower()
@@ -174,29 +173,19 @@ class ToolAnDinhTanSo:
             except: pass
         return freqs
 
-    # --- HÀM QUAN TRỌNG: ƯU TIÊN WAN TRONG DẢI DÙNG CHUNG ---
     def infer_net_type_from_freq(self, f_val):
-        """
-        Xác định loại mạng dựa trên quy hoạch tần số.
-        Nguyên tắc ưu tiên: Nếu dải tần dùng chung (LAN + WAN), bắt buộc áp dụng chỉ tiêu WAN.
-        Thứ tự ưu tiên: WAN_SIMPLEX > WAN_DUPLEX > LAN
-        """
+        """Tra cứu bảng quy hoạch để xem tần số này là LAN hay WAN"""
         alloc = []
         if 130 <= f_val <= 180: alloc = config.FREQUENCY_ALLOCATION_VHF
         elif 380 <= f_val <= 500: alloc = config.FREQUENCY_ALLOCATION_UHF
         
         for start, end, modes, _ in alloc:
             if start <= f_val <= end:
-                # Nếu trong danh sách mode có WAN_SIMPLEX -> Ưu tiên cao nhất (Bảo vệ ~140km)
-                if "WAN_SIMPLEX" in modes: return "WAN_SIMPLEX"
-                
-                # Nếu trong danh sách mode có WAN_DUPLEX -> Ưu tiên nhì (Bảo vệ ~100km)
+                if len(modes) == 1: return modes[0] 
+                if "WAN_SIMPLEX" in modes: return "WAN_SIMPLEX" 
                 if "WAN_DUPLEX" in modes: return "WAN_DUPLEX"
-                
-                # Nếu chỉ có LAN thì mới trả về LAN
                 return "LAN"
-                
-        return "LAN" # Mặc định nếu không tìm thấy trong quy hoạch
+        return "LAN" 
 
     def clean_data(self):
         cleaned_rows = []
@@ -255,10 +244,9 @@ class ToolAnDinhTanSo:
             all_freqs_to_check = list(set(all_freqs_to_check))
 
             for f in all_freqs_to_check:
-                # --- UPDATE: Gán loại mạng theo nguyên tắc ưu tiên ---
-                # Ví dụ: 419.0 MHz (thuộc 418.5-419.5, có LAN + WAN_DUPLEX)
-                # Hàm infer sẽ trả về "WAN_DUPLEX" -> Áp dụng chỉ tiêu cao hơn.
                 net_type = self.infer_net_type_from_freq(f)
+                
+                if "WAN" in license_str: net_type = "WAN_SIMPLEX"
                 
                 cleaned_rows.append({
                     "freq": f, 
@@ -267,7 +255,7 @@ class ToolAnDinhTanSo:
                     "lon": lon if lon else 0,
                     "has_coords": has_coords, 
                     "province": clean_prov, 
-                    "net_type": net_type,
+                    "net_type": net_type, 
                     "is_holding": is_holding, 
                     "license": license_str,
                     "customer": customer_str
@@ -303,10 +291,6 @@ class ToolAnDinhTanSo:
         if is_intra_lan or is_intra_wan:
             matrix = config.MATRIX_VHF if band == 'VHF' else config.MATRIX_UHF
             table_key = user_scenario_key
-            # Nếu tần số DB là WAN_SIMPLEX hoặc WAN_DUPLEX, ta phải dùng bảng WAN tương ứng
-            # để tính khoảng cách bảo vệ cho trạm đó, bất kể user đang xin là gì (theo logic an toàn)
-            # Tuy nhiên theo logic ma trận chéo, ta xử lý ở phần else nếu khác loại.
-            # Ở đây xử lý trường hợp cùng loại (Intra):
             if is_intra_wan:
                 table_key = user_main_mode 
         else:
@@ -429,11 +413,13 @@ class ToolAnDinhTanSo:
         band = user_input['band']
         bw = user_input['bw']
         mode = user_input['usage_mode']
+        scan_start = user_input.get('scan_start', 0) # <-- Lấy từ UI
+        scan_end = user_input.get('scan_end', 0)
         
         raw_input_prov = str(user_input.get('province_code', ''))
         user_province_clean = chuan_hoa_text(raw_input_prov)
         
-        candidates = self.generate_candidates(band, bw, mode, user_province_clean)
+        candidates = self.generate_candidates(band, bw, mode, user_province_clean, scan_start, scan_end)
         bad_results = []
         
         for f_check in candidates:
@@ -474,7 +460,8 @@ class ToolAnDinhTanSo:
 
         return bad_results
 
-    def generate_candidates(self, band, bw, usage_mode, user_province_clean):
+    # --- HÀM 3: SINH TẦN SỐ (UPDATE: THÊM SCAN_START, SCAN_END) ---
+    def generate_candidates(self, band, bw, usage_mode, user_province_clean, scan_start=0, scan_end=0):
         candidates = []
         allocations = config.FREQUENCY_ALLOCATION_VHF if band == 'VHF' else config.FREQUENCY_ALLOCATION_UHF
         step_mhz = bw / 1000.0 
@@ -483,9 +470,16 @@ class ToolAnDinhTanSo:
         allowed_group_2 = ['HOCHIMINH', 'TPHOCHIMINH', 'HCM']
 
         for start_f, end_f, modes, _ in allocations:
+            # INTERSECTION: Tìm phần giao giữa Dải quy hoạch (start_f, end_f) và Dải chọn (scan_start, scan_end)
+            actual_s = max(start_f, scan_start)
+            actual_e = min(end_f, scan_end)
+            
+            # Nếu không giao nhau -> Bỏ qua
+            if actual_s > actual_e: continue
+            
             if usage_mode in modes:
-                curr = start_f
-                while curr <= end_f + 0.00001:
+                curr = actual_s
+                while curr <= actual_e + 0.00001:
                     curr_rounded = round(curr, 5) 
                     
                     is_forbidden = any((r_s - 0.025) <= curr_rounded <= (r_e + 0.025) for r_s, r_e in config.FORBIDDEN_BANDS)
@@ -523,11 +517,14 @@ class ToolAnDinhTanSo:
         band = user_input['band']
         bw = user_input['bw']
         mode = user_input['usage_mode']
+        scan_start = user_input.get('scan_start', 0) # <-- Lấy từ UI
+        scan_end = user_input.get('scan_end', 0)
         
         raw_input_prov = str(user_input.get('province_code', ''))
         user_province_clean = chuan_hoa_text(raw_input_prov)
         
-        candidates = self.generate_candidates(band, bw, mode, user_province_clean)
+        # Gọi hàm tạo candidates với giới hạn quét
+        candidates = self.generate_candidates(band, bw, mode, user_province_clean, scan_start, scan_end)
         if not candidates: return []
 
         df_freqs = self.df['freq'].values
