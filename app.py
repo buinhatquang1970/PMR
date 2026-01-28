@@ -209,9 +209,8 @@ help_html = """<span class='tooltip-container'>📖 Hướng dẫn sử dụng
 <span class='tooltiptext'>
 <h4 style='margin:0; text-align:center; color:#0068C9'>HƯỚNG DẪN SỬ DỤNG NHANH</h4><hr>
 <strong>1. Chuẩn bị dữ liệu đầu vào</strong><br>
-• File Excel (.xlsx) chứa các trạm hiện hữu.<br>
-• Cột cần có: Số GP, Tần số, Tọa độ, Độ cao, Khách hàng.<br>
-• Tool tự nhận diện tên cột (VD: Freq, Frequency, Tần số...).<br><br>
+• File Excel (.xlsx) trích xuất từ PM cấp phép.<br>
+• Các trường tối thiểu cần có : Số GP, Tần số, Tọa độ, Độ cao, Khách hàng.<br>
 <strong>2. Nhập thông số (Cột bên trái)</strong><br>
 • Nhập Tọa độ, Loại mạng (LAN/WAN), Độ cao, Dải tần.<br>
 • <strong>Đoạn băng tần quét:</strong> Chọn dải tần con (VD: 141.5 - 142.0).<br>
@@ -219,7 +218,7 @@ help_html = """<span class='tooltip-container'>📖 Hướng dẫn sử dụng
 <strong>3. Các chức năng tính toán</strong><br>
 • <strong>TÍNH TẦN SỐ KHẢ DỤNG:</strong> Tìm tần số sạch, sắp xếp theo độ ưu tiên.<br>
 • <strong>LỌC TS KHÔNG KHẢ DỤNG:</strong> Tìm tần số gây nhiễu và nguyên nhân.<br>
-• <strong>KIỂM TRA CỤ THỂ:</strong> Kiểm tra nhanh 1 tần số bất kỳ.<br><br>
+• <strong>KIỂM TRA CỤ THỂ:</strong> Kiểm tra nhanh 1 tần số bất kỳ xem có gây nhiễu hay không.<br><br>
 <strong>4. Lưu kết quả</strong><br>
 • Nút <strong>📥 LƯU KẾT QUẢ (EXCEL)</strong> sẽ xuất hiện sau khi tính xong.<br><br>
 <strong>5. Cách đọc kết quả</strong><br>
@@ -287,9 +286,10 @@ with col_layout_left:
         
         for item in current_alloc:
             s_f, e_f, m_list, note = item
-            label = f"{s_f} - {e_f} MHz ({note})"
-            subband_map[label] = (s_f, e_f)
-            subband_labels.append(label)
+            if mode in m_list:
+                label = f"{s_f} - {e_f} MHz ({note})"
+                subband_map[label] = (s_f, e_f)
+                subband_labels.append(label)
             
         selected_subband_label = st.selectbox("Chọn dải con", subband_labels, label_visibility="collapsed")
         scan_start, scan_end = subband_map.get(selected_subband_label, (0, 0))
@@ -298,7 +298,7 @@ with col_layout_left:
         st.markdown("**Băng thông**")
         bw = st.selectbox("Băng thông", [6.25, 12.5, 25.0], index=1, label_visibility="collapsed")
     
-    # --- [CHỈNH SỬA] ĐỘ RỘNG CỘT TỈNH = LOẠI MẠNG (1.2) ---
+    # --- ĐỘ RỘNG CỘT TỈNH = LOẠI MẠNG (1.2) ---
     c_prov, c_qty, c_space = st.columns([1.2, 0.8, 3.0], gap="small")
     with c_prov:
         st.markdown("**Tỉnh / Thành phố**")
@@ -309,7 +309,7 @@ with col_layout_left:
             province_manual_input = st.text_input("Nhập tên Tỉnh/TP cụ thể:", placeholder="Ví dụ: Bà Rịa Vũng Tàu", label_visibility="collapsed")
     
     with c_qty:
-        st.markdown("**Số lượng tần số**")
+        st.markdown("**Số lượng**")
         qty = st.number_input("Số lượng", value=1, min_value=1, label_visibility="collapsed")
     
     with c_space:
@@ -358,7 +358,8 @@ with col_layout_right:
 
 st.markdown("---")
 st.subheader("3. KIỂM TRA TẦN SỐ CỤ THỂ")
-c_check_1, c_check_2 = st.columns([0.5, 4.5]) 
+# --- ĐỘ RỘNG CỘT NHẬP TẦN SỐ TỪ 0.5 LÊN 1.0 ---
+c_check_1, c_check_2 = st.columns([1.0, 4.0]) 
 with c_check_1:
     f_check_val = st.number_input("Nhập tần số (MHz):", value=0.0, step=0.0125, format="%.4f")
 with c_check_2:
@@ -571,14 +572,21 @@ elif st.session_state.active_view == "UNAVAILABLE" and st.session_state.bad_freq
         st.warning(f"⚠️ Tìm thấy {len(bad_list)} trường hợp tần số gây nhiễu (không khả dụng).")
         df_bad = pd.DataFrame(bad_list)
         
+        # --- [ĐÃ CẬP NHẬT] GỘP CỘT KHOẢNG CÁCH ---
+        if "Khoảng cách thực tế (km)" in df_bad.columns and "Khoảng cách yêu cầu (km)" in df_bad.columns:
+             df_bad["Khoảng cách thực tế/Chỉ tiêu"] = df_bad.apply(lambda x: f"{x['Khoảng cách thực tế (km)']:.2f}/{x['Khoảng cách yêu cầu (km)']:.2f}", axis=1)
+             df_bad.drop(columns=["Khoảng cách thực tế (km)", "Khoảng cách yêu cầu (km)"], inplace=True)
+        elif "dist_km" in df_bad.columns and "req_dist_km" in df_bad.columns:
+             df_bad["Khoảng cách thực tế/Chỉ tiêu"] = df_bad.apply(lambda x: f"{x['dist_km']:.2f}/{x['req_dist_km']:.2f}", axis=1)
+             df_bad.drop(columns=["dist_km", "req_dist_km"], inplace=True)
+             
         st.dataframe(
             df_bad, 
             use_container_width=True,
             column_config={
                 "Tên Khách Hàng": st.column_config.TextColumn(width="large"), 
                 "Địa chỉ trạm bị nhiễu": st.column_config.TextColumn(width="medium"),
-                "Khoảng cách thực tế (km)": st.column_config.NumberColumn(width="small", format="%.2f"),
-                "Khoảng cách yêu cầu (km)": st.column_config.NumberColumn(width="small", format="%.2f"),
+                "Khoảng cách thực tế/Chỉ tiêu": st.column_config.TextColumn(width="medium", label="K.Cách Thực tế/Chỉ tiêu (km)"),
                 "Tần số (MHz)": st.column_config.NumberColumn(format="%.4f"),
                 "Tần số trạm bị nhiễu (MHz)": st.column_config.NumberColumn(format="%.4f"),
             }
@@ -620,12 +628,14 @@ elif st.session_state.active_view == "CHECK_SPECIFIC" and st.session_state.check
             st.markdown("**Danh sách các giấy phép gây nhiễu (không đảm bảo khoảng cách):**")
             df_conflict = pd.DataFrame(res["conflicts"])
             if not df_conflict.empty:
+                # --- [ĐÃ CẬP NHẬT] GỘP CỘT KHOẢNG CÁCH CHO BẢNG KIỂM TRA CỤ THỂ ---
+                df_conflict["Khoảng cách thực tế/Chỉ tiêu"] = df_conflict.apply(lambda x: f"{x['dist_km']:.2f}/{x['req_dist_km']:.2f}", axis=1)
+                df_conflict.drop(columns=["dist_km", "req_dist_km"], inplace=True)
+                
                 df_conflict.rename(columns={
                     "license": "Số Giấy Phép",
                     "customer": "Tên Khách Hàng",
                     "freq_conflict": "Tần số GP (MHz)",
-                    "dist_km": "Khoảng cách thực tế (km)",
-                    "req_dist_km": "Khoảng cách yêu cầu (km)",
                     "address": "Địa chỉ trạm",
                     "type": "Loại nhiễu"
                 }, inplace=True)
