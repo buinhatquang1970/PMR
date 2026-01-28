@@ -13,18 +13,19 @@ importlib.reload(config)
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-EXCEL_COLUMNS = {
-    "LICENSE_NO": "Số giấy phép", 
-    "CUSTOMER": "Tên khách hàng", 
-    "FREQUENCY": "Tần số phát",
-    "FREQ_RX": "Tần số thu",
-    "BANDWIDTH": "Phương thức phát", 
-    "LAT": "Vị trí anten: Vĩ độ",
-    "LON": "Vị trí anten: Kinh độ", 
-    "ADDRESS": "Địa điểm đặt thiết bị", 
-    "PROVINCE_OLD": "Tỉnh thành",      
-    "ANTENNA_HEIGHT": "Độ cao anten",
-    "CONDITIONS": "Các điều kiện khác"
+# Cấu hình ánh xạ cột (Mặc định)
+DEFAULT_COL_MAPPING = {
+    "LICENSE_NO": ["Số giấy phép", "Số GP", "License", "Lic"], 
+    "CUSTOMER": ["Tên khách hàng", "Khách hàng", "Customer", "User"], 
+    "FREQUENCY": ["Tần số phát", "Frequency", "Freq", "Tx Freq", "Tần số"],
+    "FREQ_RX": ["Tần số thu", "Rx Freq", "Freq Rx"],
+    "BANDWIDTH": ["Phương thức phát", "Emission", "Bandwidth", "BW", "Dải thông"], 
+    "LAT": ["Vị trí anten: Vĩ độ", "Vĩ độ", "Lat", "Latitude"],
+    "LON": ["Vị trí anten: Kinh độ", "Kinh độ", "Lon", "Long", "Longitude"], 
+    "ADDRESS": ["Địa điểm đặt thiết bị", "Địa chỉ", "Address", "Location"], 
+    "PROVINCE_OLD": ["Tỉnh thành", "Province", "Tỉnh"],      
+    "ANTENNA_HEIGHT": ["Độ cao anten", "Height", "Độ cao"],
+    "CONDITIONS": ["Các điều kiện khác", "Ghi chú", "Condition"]
 }
 
 MAX_CANDIDATES = 20000
@@ -69,79 +70,58 @@ class ToolAnDinhTanSo:
             
             if not self.df.empty:
                 self.df.columns = self.df.columns.str.strip()
-                rename_map = {}
-                
-                def find_col_by_keyword(keywords):
-                    for col in self.df.columns:
-                        col_lower = str(col).lower()
-                        for kw in keywords:
-                            if kw.lower() in col_lower:
-                                return col
-                    return None
-
-                for key, col_name in EXCEL_COLUMNS.items():
-                    if col_name in self.df.columns:
-                        target = {
-                            "LICENSE_NO": "license", "CUSTOMER": "raw_customer",
-                            "FREQUENCY": "raw_freq", "FREQ_RX": "raw_freq_rx",
-                            "BANDWIDTH": "raw_bw", "LAT": "raw_lat",
-                            "LON": "raw_lon", "ADDRESS": "raw_address",
-                            "PROVINCE_OLD": "raw_province_col", "ANTENNA_HEIGHT": "h_anten",
-                            "CONDITIONS": "raw_conditions"
-                        }.get(key, key)
-                        rename_map[col_name] = target
-
-                if "raw_freq" not in rename_map.values():
-                    col = find_col_by_keyword(["Tần số phát", "Frequency"])
-                    if col: rename_map[col] = "raw_freq"
-                
-                if "raw_customer" not in rename_map.values():
-                    col = find_col_by_keyword(["Tên khách hàng", "Khách hàng", "Customer"])
-                    if col: rename_map[col] = "raw_customer"
-
-                if "raw_freq_rx" not in rename_map.values():
-                    col = find_col_by_keyword(["Tần số thu", "Rx Freq"])
-                    if col: rename_map[col] = "raw_freq_rx"
-
-                if "raw_lat" not in rename_map.values():
-                    col = find_col_by_keyword(["Vĩ độ", "Lat"])
-                    if col: rename_map[col] = "raw_lat"
-                    
-                if "raw_lon" not in rename_map.values():
-                    col = find_col_by_keyword(["Kinh độ", "Lon"])
-                    if col: rename_map[col] = "raw_lon"
-                    
-                if "license" not in rename_map.values():
-                    col = find_col_by_keyword(["Số GP", "Giấy phép", "License"])
-                    if col: rename_map[col] = "license"
-                    
-                if "raw_bw" not in rename_map.values():
-                    col = find_col_by_keyword(["Phương thức", "Emission", "Bandwidth"])
-                    if col: rename_map[col] = "raw_bw"
-
-                if "raw_address" not in rename_map.values():
-                    col = find_col_by_keyword(["Địa điểm", "Địa chỉ", "Address"])
-                    if col: rename_map[col] = "raw_address"
-                
-                if "raw_province_col" not in rename_map.values():
-                    col = find_col_by_keyword(["Tỉnh thành", "Province", "Tỉnh"])
-                    if col: rename_map[col] = "raw_province_col"
-
-                self.df = self.df.rename(columns=rename_map)
+                self.map_columns_smart()
                 self.clean_data()
             
         except Exception as e:
             logger.exception("Lỗi khởi tạo Tool")
             self.df = pd.DataFrame() 
 
+    def map_columns_smart(self):
+        rename_map = {}
+        cols = self.df.columns
+        
+        internal_names = {
+            "LICENSE_NO": "license", "CUSTOMER": "raw_customer",
+            "FREQUENCY": "raw_freq", "FREQ_RX": "raw_freq_rx",
+            "BANDWIDTH": "raw_bw", "LAT": "raw_lat",
+            "LON": "raw_lon", "ADDRESS": "raw_address",
+            "PROVINCE_OLD": "raw_province_col", "ANTENNA_HEIGHT": "h_anten",
+            "CONDITIONS": "raw_conditions"
+        }
+
+        for key, keywords in DEFAULT_COL_MAPPING.items():
+            found = False
+            for col in cols:
+                for kw in keywords:
+                    if kw.lower() == str(col).lower().strip():
+                        rename_map[col] = internal_names[key]
+                        found = True
+                        break
+                if found: break
+            
+            if not found:
+                for col in cols:
+                    col_str = str(col).lower()
+                    for kw in keywords:
+                        if kw.lower() in col_str:
+                            rename_map[col] = internal_names[key]
+                            found = True
+                            break
+                    if found: break
+        
+        self.df = self.df.rename(columns=rename_map)
+
     def convert_dms_to_decimal(self, dms_str):
         if pd.isna(dms_str): return None
-        s_in = str(dms_str).upper().strip().replace(',', '.')
-        try:
-            val = float(s_in)
-            if 0 < abs(val) < 180: return val
-        except: pass
-        numbers = re.findall(r"(\d+(?:\.\d+)?)", s_in)
+        s_in = str(dms_str).upper().strip()
+        s_clean = re.sub(r"[NSEWnsew°'\"’;:_]", " ", s_in)
+        
+        if s_clean.count('.') > 1: s_clean = s_clean.replace('.', ' ')
+        else: s_clean = s_clean.replace(',', '.')
+
+        numbers = re.findall(r"(\d+(?:\.\d+)?)", s_clean)
+        
         if len(numbers) >= 2: 
             try:
                 d = float(numbers[0])
@@ -152,6 +132,11 @@ class ToolAnDinhTanSo:
                 if abs(decimal) > 180: return None
                 return decimal
             except: return None
+            
+        try:
+            val = float(s_in.replace(',', '.'))
+            if 0 < abs(val) < 180: return val
+        except: pass
         return None
 
     def parse_bandwidth(self, emission_code):
@@ -165,24 +150,39 @@ class ToolAnDinhTanSo:
     def parse_freq_string(self, freq_str):
         if pd.isna(freq_str): return []
         clean_s = str(freq_str).upper().replace(',', '.').replace('MHZ', '').replace(';', ' ')
+        
         freqs = []
+        range_match = re.findall(r"(\d+\.?\d*)\s*-\s*(\d+\.?\d*)", clean_s)
+        
+        if range_match:
+            for start_str, end_str in range_match:
+                try:
+                    start_f = float(start_str)
+                    end_f = float(end_str)
+                    if start_f > end_f: start_f, end_f = end_f, start_f 
+                    current = start_f
+                    while current <= end_f + 0.0001:
+                        freqs.append(round(current, 5))
+                        current += 0.0125
+                except: pass
+        
         for item in clean_s.split():
+            if item == '-': continue 
             try:
                 f = float(item)
                 if f > 10: freqs.append(f)
             except: pass
-        return freqs
+            
+        return sorted(list(set(freqs)))
 
     def infer_net_type_from_freq(self, f_val):
-        """Tra cứu bảng quy hoạch để xem tần số này là LAN hay WAN"""
         alloc = []
         if 130 <= f_val <= 180: alloc = config.FREQUENCY_ALLOCATION_VHF
         elif 380 <= f_val <= 500: alloc = config.FREQUENCY_ALLOCATION_UHF
         
         for start, end, modes, _ in alloc:
             if start <= f_val <= end:
-                if len(modes) == 1: return modes[0] 
-                if "WAN_SIMPLEX" in modes: return "WAN_SIMPLEX" 
+                if "WAN_SIMPLEX" in modes: return "WAN_SIMPLEX"
                 if "WAN_DUPLEX" in modes: return "WAN_DUPLEX"
                 return "LAN"
         return "LAN" 
@@ -191,52 +191,49 @@ class ToolAnDinhTanSo:
         cleaned_rows = []
         self.reserved_frequencies = [] 
         
-        has_province_col = 'raw_province_col' in self.df.columns
-        has_address_col = 'raw_address' in self.df.columns
         has_license_col = 'license' in self.df.columns
         has_customer_col = 'raw_customer' in self.df.columns
+        has_freq_col = 'raw_freq' in self.df.columns
+        has_lat_col = 'raw_lat' in self.df.columns
+        has_lon_col = 'raw_lon' in self.df.columns
         
+        if not has_freq_col:
+            logger.error("Không tìm thấy cột Tần số trong file Excel!")
+            return 
+
         for idx, row in self.df.iterrows():
             raw_prov_extracted = ""
-            if has_province_col:
+            if 'raw_province_col' in self.df.columns:
                 val = str(row.get('raw_province_col', ''))
-                if val.lower() not in ['nan', '', 'none']:
-                    raw_prov_extracted = val
+                if val.lower() not in ['nan', '', 'none']: raw_prov_extracted = val
             
-            if (not raw_prov_extracted) and has_address_col:
+            if (not raw_prov_extracted) and 'raw_address' in self.df.columns:
                 parts = str(row.get('raw_address', '')).split(',')
                 raw_prov_extracted = parts[-1] if len(parts) > 0 else str(row.get('raw_address', ''))
             
             clean_prov = chuan_hoa_text(raw_prov_extracted)
-            
             is_holding = "LUUDONGTOANQUOC" in clean_prov
             
-            tx_freqs = self.parse_freq_string(row.get('raw_freq'))
-            rx_freqs = self.parse_freq_string(row.get('raw_freq_rx'))
+            tx_freqs = self.parse_freq_string(row.get('raw_freq')) if has_freq_col else []
+            rx_freqs = self.parse_freq_string(row.get('raw_freq_rx')) if 'raw_freq_rx' in self.df.columns else []
             
             if is_holding:
                 for f in tx_freqs: self.reserved_frequencies.append(f)
                 for f in rx_freqs: self.reserved_frequencies.append(f)
             
-            lat = self.convert_dms_to_decimal(row.get('raw_lat'))
-            lon = self.convert_dms_to_decimal(row.get('raw_lon'))
+            lat = self.convert_dms_to_decimal(row.get('raw_lat')) if has_lat_col else None
+            lon = self.convert_dms_to_decimal(row.get('raw_lon')) if has_lon_col else None
             
             has_coords = (lat is not None and lon is not None)
             
             if not has_coords and not is_holding:
                 continue
 
-            bw = self.parse_bandwidth(row.get('raw_bw'))
+            bw = self.parse_bandwidth(row.get('raw_bw')) if 'raw_bw' in self.df.columns else 12.5
             
-            license_str = ""
-            if has_license_col:
-                license_str = str(row.get('license', '')).strip().upper()
-            
-            customer_str = ""
-            if has_customer_col:
-                val = str(row.get('raw_customer', ''))
-                if val.lower() not in ['nan', 'none']:
-                    customer_str = val.strip()
+            license_str = str(row.get('license', '')).strip().upper() if has_license_col else ""
+            customer_str = str(row.get('raw_customer', '')).strip() if has_customer_col else ""
+            if customer_str.lower() in ['nan', 'none']: customer_str = ""
 
             all_freqs_to_check = []
             for f in tx_freqs: all_freqs_to_check.append(f)
@@ -246,8 +243,6 @@ class ToolAnDinhTanSo:
             for f in all_freqs_to_check:
                 net_type = self.infer_net_type_from_freq(f)
                 
-                if "WAN" in license_str: net_type = "WAN_SIMPLEX"
-                
                 cleaned_rows.append({
                     "freq": f, 
                     "bw": bw, 
@@ -255,7 +250,7 @@ class ToolAnDinhTanSo:
                     "lon": lon if lon else 0,
                     "has_coords": has_coords, 
                     "province": clean_prov, 
-                    "net_type": net_type, 
+                    "net_type": net_type,
                     "is_holding": is_holding, 
                     "license": license_str,
                     "customer": customer_str
@@ -325,7 +320,7 @@ class ToolAnDinhTanSo:
     # --- HÀM 1: KIỂM TRA TẦN SỐ CỤ THỂ ---
     def kiem_tra_tan_so_cu_the(self, user_input, f_check):
         if self.df.empty: 
-            return {"status": "ERROR", "msg": "Chưa có dữ liệu Excel hoặc dữ liệu rỗng."}
+            return {"status": "ERROR", "msg": "Chưa có dữ liệu Excel hoặc dữ liệu rỗng (Không tìm thấy cột Tần số/Tọa độ)."}
 
         user_mode_tuple = self.xac_dinh_kich_ban_user(user_input)
         band = user_input['band']
@@ -375,7 +370,7 @@ class ToolAnDinhTanSo:
                 dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
             except: continue
             
-            if dist_km == 0: continue
+            if dist_km < 0.05: continue
             
             delta_f = abs(f_check - row['freq']) * 1000 
             rx_bw = row['bw']
@@ -391,13 +386,15 @@ class ToolAnDinhTanSo:
                 elif delta_f < 30: int_type = "Kênh kề 25kHz"
                 else: int_type = f"Lệch {delta_f:.2f} kHz"
 
+                conflict_coords = f"{row['lat']:.4f}, {row['lon']:.4f}"
+                
                 conflicts.append({
                     "license": row['license'],
                     "customer": row.get('customer', ''), 
                     "freq_conflict": row['freq'],
                     "dist_km": round(dist_km, 2),
                     "req_dist_km": req_dist,
-                    "address": row.get('province', ''),
+                    "address": row.get('province', '') + f" (Toạ độ: {conflict_coords})",
                     "type": int_type
                 })
 
@@ -413,7 +410,7 @@ class ToolAnDinhTanSo:
         band = user_input['band']
         bw = user_input['bw']
         mode = user_input['usage_mode']
-        scan_start = user_input.get('scan_start', 0) # <-- Lấy từ UI
+        scan_start = user_input.get('scan_start', 0) 
         scan_end = user_input.get('scan_end', 0)
         
         raw_input_prov = str(user_input.get('province_code', ''))
@@ -431,7 +428,7 @@ class ToolAnDinhTanSo:
                     dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
                 except: continue
                 
-                if dist_km == 0: continue
+                if dist_km < 0.05: continue
                 
                 delta_f = abs(f_check - row['freq']) * 1000 
                 rx_bw = row['bw']
@@ -460,7 +457,6 @@ class ToolAnDinhTanSo:
 
         return bad_results
 
-    # --- HÀM 3: SINH TẦN SỐ (UPDATE: THÊM SCAN_START, SCAN_END) ---
     def generate_candidates(self, band, bw, usage_mode, user_province_clean, scan_start=0, scan_end=0):
         candidates = []
         allocations = config.FREQUENCY_ALLOCATION_VHF if band == 'VHF' else config.FREQUENCY_ALLOCATION_UHF
@@ -470,16 +466,15 @@ class ToolAnDinhTanSo:
         allowed_group_2 = ['HOCHIMINH', 'TPHOCHIMINH', 'HCM']
 
         for start_f, end_f, modes, _ in allocations:
-            # INTERSECTION: Tìm phần giao giữa Dải quy hoạch (start_f, end_f) và Dải chọn (scan_start, scan_end)
-            actual_s = max(start_f, scan_start)
-            actual_e = min(end_f, scan_end)
-            
-            # Nếu không giao nhau -> Bỏ qua
-            if actual_s > actual_e: continue
-            
+            if (end_f < scan_start) or (start_f > scan_end):
+                continue
+                
             if usage_mode in modes:
-                curr = actual_s
-                while curr <= actual_e + 0.00001:
+                loop_start = max(start_f, scan_start)
+                loop_end = min(end_f, scan_end)
+                
+                curr = loop_start
+                while curr <= loop_end + 0.00001:
                     curr_rounded = round(curr, 5) 
                     
                     is_forbidden = any((r_s - 0.025) <= curr_rounded <= (r_e + 0.025) for r_s, r_e in config.FORBIDDEN_BANDS)
@@ -517,18 +512,16 @@ class ToolAnDinhTanSo:
         band = user_input['band']
         bw = user_input['bw']
         mode = user_input['usage_mode']
-        scan_start = user_input.get('scan_start', 0) # <-- Lấy từ UI
+        scan_start = user_input.get('scan_start', 0) 
         scan_end = user_input.get('scan_end', 0)
         
         raw_input_prov = str(user_input.get('province_code', ''))
         user_province_clean = chuan_hoa_text(raw_input_prov)
         
-        # Gọi hàm tạo candidates với giới hạn quét
         candidates = self.generate_candidates(band, bw, mode, user_province_clean, scan_start, scan_end)
         if not candidates: return []
 
         df_freqs = self.df['freq'].values
-        df_licenses = self.df['license'].values 
         
         priority_bands = getattr(config, 'MARITIME_PRIORITY_BANDS', [])
 
@@ -543,7 +536,7 @@ class ToolAnDinhTanSo:
                     dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
                 except: continue
                 
-                if dist_km == 0: continue
+                if dist_km < 0.05: continue
                 
                 delta_f = abs(f_check - row['freq']) * 1000 
                 rx_bw = row['bw']
@@ -556,11 +549,41 @@ class ToolAnDinhTanSo:
                     break 
             
             if is_usable:
-                mask_freq_exact = np.abs(df_freqs - f_check) < 0.00001
-                relevant_licenses = df_licenses[mask_freq_exact]
-                unique_lics = sorted(list(set([str(lic).strip() for lic in relevant_licenses if str(lic).lower() not in ['nan', 'none', '', 'nan/gp']])))
-                unique_count = len(unique_lics)
-                license_str = ", ".join(unique_lics)
+                # --- [CHỈNH SỬA] FORM HIỂN THỊ GP & KHOẢNG CÁCH (GROUP BY LICENSE) ---
+                df_exact = self.df[np.abs(self.df['freq'] - f_check) < 0.00001]
+                
+                # Dictionary: License -> Min Distance
+                lic_dist_map = {} 
+
+                for _, row_e in df_exact.iterrows():
+                    raw_lic = str(row_e['license']).strip()
+                    if raw_lic.lower() in ['nan', 'none', '', 'nan/gp']: continue
+                    
+                    short_lic = raw_lic.split('/')[0]
+                    
+                    d_km = 0
+                    if row_e['has_coords']:
+                        try:
+                            d_km = geodesic((user_input['lat'], user_input['lon']), (row_e['lat'], row_e['lon'])).km
+                        except: pass
+                    
+                    # Logic: Nếu chưa có GP này hoặc khoảng cách mới nhỏ hơn khoảng cách cũ thì cập nhật
+                    if short_lic not in lic_dist_map:
+                        lic_dist_map[short_lic] = d_km
+                    else:
+                        if d_km < lic_dist_map[short_lic]:
+                            lic_dist_map[short_lic] = d_km
+
+                # Sắp xếp theo khoảng cách tăng dần (gần nhất đứng trước)
+                sorted_items = sorted(lic_dist_map.items(), key=lambda x: x[1])
+                
+                list_formatted = []
+                for lic, dist in sorted_items:
+                    list_formatted.append(f"{lic}({int(dist)})")
+
+                unique_count = len(list_formatted)
+                license_str = ", ".join(list_formatted)
+                # ---------------------------------------------------------------------
                 
                 is_priority = False
                 for p_start, p_end in priority_bands:
