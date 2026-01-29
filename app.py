@@ -359,7 +359,7 @@ with col_layout_right:
 st.markdown("---")
 st.subheader("3. KIỂM TRA TẦN SỐ CỤ THỂ")
 # --- ĐỘ RỘNG CỘT NHẬP TẦN SỐ TỪ 0.5 LÊN 1.0 ---
-c_check_1, c_check_2 = st.columns([1.0, 4.0]) 
+c_check_1, c_check_2 = st.columns([0.7, 4.3]) 
 with c_check_1:
     f_check_val = st.number_input("Nhập tần số (MHz):", value=0.0, step=0.0125, format="%.4f")
 with c_check_2:
