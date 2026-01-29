@@ -25,34 +25,26 @@ except:
     ALLOC_UHF = []
 
 # =============================================================================
-# CẤU HÌNH HỆ THỐNG GHI LOG (LOGGING SETUP)
+# CẤU HÌNH HỆ THỐNG GHI LOG (LOGGING SETUP) - ĐÃ FIX MÚI GIỜ GMT+7
 # =============================================================================
 LOG_FILE = 'pmr_tool_usage.log'
 ADMIN_PASSWORD = '123456' # Mật khẩu Admin
 
-# --- HÀM LẤY IP NGƯỜI DÙNG (CẢI TIẾN) ---
+# --- HÀM LẤY IP NGƯỜI DÙNG ---
 def get_remote_ip():
     """Lấy IP thật của người dùng sử dụng st.context.headers"""
     try:
         if hasattr(st, "context") and st.context.headers:
             headers = st.context.headers
-            # Danh sách các header có thể chứa IP thật, ưu tiên theo thứ tự
             ip_headers = [
-                "X-Forwarded-For",  # Phổ biến nhất khi qua Proxy/Load Balancer
-                "X-Real-Ip",        # Nginx thường dùng
-                "Forwarded",        # Chuẩn mới
-                "X-Client-Ip",
-                "Remote-Addr"
+                "X-Forwarded-For", "X-Real-Ip", "Forwarded", "X-Client-Ip", "Remote-Addr"
             ]
-            
             for key in ip_headers:
                 if key in headers:
                     val = headers[key]
                     if val:
                         return val.split(',')[0].strip()
-            
             return headers.get("Host", "Unknown_Host")
-            
     except Exception:
         pass
     return "127.0.0.1"
@@ -61,13 +53,26 @@ def setup_logging():
     logger = logging.getLogger("PMR_Tool_Logger")
     if not logger.handlers:
         logger.setLevel(logging.INFO)
-        # Thêm [IP] vào format log
+        
+        # --- [QUAN TRỌNG] TẠO CONVERTER MÚI GIỜ VIỆT NAM (GMT+7) ---
+        def nam_time(*args):
+            # Lấy giờ UTC hiện tại và cộng thêm 7 giờ
+            utc_now = datetime.now(timezone.utc)
+            vn_now = utc_now.astimezone(timezone(timedelta(hours=7)))
+            return vn_now.timetuple()
+
+        # Định dạng log
         formatter = logging.Formatter('%(asctime)s - [IP:%(client_ip)s] - [%(levelname)s] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
         
+        # Gán hàm chuyển đổi giờ VN cho formatter
+        formatter.converter = nam_time 
+        
+        # 1. Ghi ra file
         file_handler = RotatingFileHandler(LOG_FILE, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
         
+        # 2. Ghi ra console
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
@@ -243,9 +248,8 @@ if is_admin_route:
     if not st.session_state.admin_logged_in:
         st.info("Bạn đang truy cập trang dành riêng cho Quản trị viên.")
         
-        # --- [ĐÃ SỬA] THU NHỎ KHUNG ĐĂNG NHẬP (TỶ LỆ 3:2:3) ---
+        # --- KHUNG ĐĂNG NHẬP NHỎ GỌN (TỶ LỆ 3:2:3) ---
         c_login1, c_login2, c_login3 = st.columns([3, 2, 3]) 
-        
         with c_login2:
             with st.form("admin_login_form"):
                 st.subheader("Đăng nhập")
@@ -279,7 +283,7 @@ if is_admin_route:
         with st.expander("🕵️ Debug: Xem Headers (Tìm IP thật)"):
             if hasattr(st, "context") and st.context.headers:
                 st.json(dict(st.context.headers))
-                st.caption("Nếu bạn thấy IP thật nằm trong trường nào (ví dụ: 'X-Forwarded-For'), hãy báo Dev để cấu hình lại.")
+                st.caption("Nếu bạn thấy IP thật nằm trong trường nào, hãy báo Dev để cấu hình lại.")
             else:
                 st.warning("Không tìm thấy Header nào.")
 
@@ -432,7 +436,7 @@ else:
             province_selection = st.selectbox("Chọn Tỉnh/TP", ["-- Chọn Tỉnh/TP --", "HANOI", "HCM", "DANANG", "KHAC"], index=0, label_visibility="collapsed", disabled=is_wan)
             province_manual_input = ""
             if province_selection == "KHAC" and not is_wan:
-                province_manual_input = st.text_input("Nhập tên Tỉnh/TP cụ thể:", placeholder="Ví dụ: Bắc Ninh", label_visibility="collapsed")
+                province_manual_input = st.text_input("Nhập tên Tỉnh/TP cụ thể:", placeholder="Ví dụ: Bà Rịa Vũng Tàu", label_visibility="collapsed")
         
         with c_qty:
             st.markdown("**Số lượng**")
