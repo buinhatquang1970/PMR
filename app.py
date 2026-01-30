@@ -98,11 +98,10 @@ try:
     file_timestamp = os.path.getmtime(__file__)
     vn_tz = timezone(timedelta(hours=7))
     dt_vn = datetime.fromtimestamp(file_timestamp, vn_tz)
-    hour_12 = dt_vn.hour % 12
-    if hour_12 == 0: hour_12 = 12
-    APP_VERSION = f"v{dt_vn.strftime('%d%m%y')}.{hour_12}"
+   # Lấy giờ theo định dạng 24h (0-23) thay vì 12h
+    APP_VERSION = f"v{dt_vn.strftime('%d%m%y')}.{dt_vn.hour}"
 except Exception:
-    APP_VERSION = "v280126.1"
+    APP_VERSION = "v300126.14"
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title=f"PMR tool ({APP_VERSION})", layout="wide")
@@ -110,7 +109,12 @@ st.set_page_config(page_title=f"PMR tool ({APP_VERSION})", layout="wide")
 # --- CSS TÙY CHỈNH (Dùng chung) ---
 st.markdown("""
     <style>
-        .block-container { padding-top: 3.5rem !important; padding-bottom: 2rem; }
+        .block-container { padding-top: 1rem !important; padding-bottom: 2rem; }
+        /* Ẩn bớt thanh Header mặc định của Streamlit để thoáng hơn */
+        header[data-testid="stHeader"] {
+            height: 2rem !important; 
+            background-color: transparent !important;
+        }
         h2 { font-size: 1.3rem !important; margin-top: 0.5rem; margin-bottom: 0.2rem !important; }
         h3 { font-size: 0.95rem !important; padding-top: 0.2rem !important; padding-bottom: 0.2rem !important; }
         div[data-testid="stMarkdownContainer"] > p { margin-bottom: -3px !important; font-weight: 500; }
