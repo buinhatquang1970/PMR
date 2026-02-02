@@ -344,8 +344,8 @@ else:
     <span class='tooltiptext'>
     <h4 style='margin:0; text-align:center; color:#0068C9'>HƯỚNG DẪN SỬ DỤNG NHANH</h4><hr>
     <strong>1. Chuẩn bị dữ liệu đầu vào</strong><br>
-    • File Excel (.xlsx) chứa các trạm hiện hữu.<br>
-    • Cột cần có: Số GP, Tần số, Tọa độ, Độ cao, Khách hàng.<br>
+    • File Excel (.xlsx) xuất từ phần mềm cấp phép chứa các trạm hiện hữu.<br>
+    • Các Cột cần có: Số GP, Tần số, Tọa độ, Độ cao, Khách hàng.<br>
     • Tool tự nhận diện tên cột (VD: Freq, Frequency, Tần số...).<br><br>
     <strong>2. Nhập thông số (Cột bên trái)</strong><br>
     • Nhập Tọa độ, Loại mạng (LAN/WAN), Độ cao, Dải tần.<br>
@@ -788,4 +788,5 @@ else:
                         "address": "Địa chỉ trạm",
                         "type": "Loại nhiễu"
                     }, inplace=True)
+
                     st.table(df_conflict)
