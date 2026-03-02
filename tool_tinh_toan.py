@@ -61,8 +61,12 @@ class ToolAnDinhTanSo:
         
         self.df = pd.DataFrame()
         try:
+            # --- FIX: Đọc file an toàn hơn (utf-8-sig) ---
             if file_name.lower().endswith('.csv'):
-                self.df = pd.read_csv(file_source)
+                try:
+                    self.df = pd.read_csv(file_source, encoding='utf-8-sig')
+                except:
+                    self.df = pd.read_csv(file_source, encoding='latin-1')
             elif file_name.lower().endswith('.xlsx'):
                 self.df = pd.read_excel(file_source, engine='openpyxl')
             else:
@@ -71,11 +75,20 @@ class ToolAnDinhTanSo:
             if not self.df.empty:
                 self.df.columns = self.df.columns.str.strip()
                 self.map_columns_smart()
+
+                # --- [THÊM MỚI] VALIDATION CHECK ---
+                self.validate_required_columns()
+                # -----------------------------------
+
                 self.clean_data()
-            
+            else:
+                # Ném lỗi nếu file rỗng để App bắt được
+                raise ValueError("File Excel rỗng hoặc không đọc được dữ liệu.")
+
         except Exception as e:
             logger.exception("Lỗi khởi tạo Tool")
-            self.df = pd.DataFrame() 
+            # Ném lỗi ra ngoài cho App.py xử lý hiển thị
+            raise e 
 
     def map_columns_smart(self):
         rename_map = {}
@@ -111,6 +124,29 @@ class ToolAnDinhTanSo:
                     if found: break
         
         self.df = self.df.rename(columns=rename_map)
+
+    # --- [THÊM MỚI] HÀM KIỂM TRA CỘT BẮT BUỘC ---
+    def validate_required_columns(self):
+        """
+        Kiểm tra file Excel có đủ các cột: Tần số, Vĩ độ, Kinh độ, Tỉnh thành.
+        Nếu thiếu sẽ dừng ngay lập tức.
+        """
+        required_map = {
+            "raw_freq": "Tần số phát (Frequency)",
+            "raw_lat": "Vĩ độ (Latitude)",
+            "raw_lon": "Kinh độ (Longitude)",
+            "raw_province_col": "Tỉnh thành (Province)" # <-- Bắt buộc theo yêu cầu của bạn
+        }
+        
+        missing_cols = []
+        for internal_col, human_name in required_map.items():
+            if internal_col not in self.df.columns:
+                missing_cols.append(human_name)
+        
+        if missing_cols:
+            msg = f"File Excel thiếu các cột bắt buộc: {', '.join(missing_cols)}. Vui lòng kiểm tra lại file đầu vào."
+            raise ValueError(msg)
+    # ----------------------------------------------
 
     def convert_dms_to_decimal(self, dms_str):
         if pd.isna(dms_str): return None
@@ -198,6 +234,7 @@ class ToolAnDinhTanSo:
         has_lon_col = 'raw_lon' in self.df.columns
         
         if not has_freq_col:
+            # Dòng này giờ ít khi chạy tới vì đã validate ở trên, nhưng giữ lại cho chắc chắn
             logger.error("Không tìm thấy cột Tần số trong file Excel!")
             return 
 
@@ -301,9 +338,9 @@ class ToolAnDinhTanSo:
         if not table_tx: table_tx = matrix.get(table_key, {}).get(12.5, {})
 
         val = abs(delta_f)
-        if val < 3: key_d = 0         
-        elif val < 9: key_d = 6.25    
-        elif val < 15: key_d = 12.5   
+        if val < 3: key_d = 0          
+        elif val < 9: key_d = 6.25     
+        elif val < 15: key_d = 12.5    
         elif val < 21: key_d = 18.75
         elif val < 30: key_d = 25.0
         else: return 0.0 
@@ -321,6 +358,10 @@ class ToolAnDinhTanSo:
     def kiem_tra_tan_so_cu_the(self, user_input, f_check):
         if self.df.empty: 
             return {"status": "ERROR", "msg": "Chưa có dữ liệu Excel hoặc dữ liệu rỗng (Không tìm thấy cột Tần số/Tọa độ)."}
+        
+        # --- FIX: Kiểm tra cột freq trước khi xử lý ---
+        if 'freq' not in self.df.columns:
+             return {"status": "ERROR", "msg": "Lỗi dữ liệu: Không tìm thấy cột 'freq' sau khi xử lý."}
 
         user_mode_tuple = self.xac_dinh_kich_ban_user(user_input)
         band = user_input['band']
@@ -344,6 +385,11 @@ class ToolAnDinhTanSo:
              return {"status": "FAIL", "msg": f"Tần số {f_check_rounded} nằm ngoài dải phân bổ VHF/UHF hỗ trợ.", "conflicts": []}
         if not is_allocated_mode:
             return {"status": "FAIL", "msg": f"Tần số được quy hoạch cho {allowed_for_freq}, KHÔNG cấp cho {user_input['usage_mode']}.", "conflicts": []}
+
+        # --- GỌI HÀM CHECK CẤM/DÙNG CHUNG ---
+        is_forbidden, reason = self.check_forbidden_status(f_check_rounded, band)
+        if is_forbidden:
+             return {"status": "FAIL", "msg": f"Tần số không khả dụng: {reason}", "conflicts": []}
 
         is_forbidden = any((r_s - 0.025) <= f_check_rounded <= (r_e + 0.025) for r_s, r_e in config.FORBIDDEN_BANDS)
         if is_forbidden:
@@ -402,10 +448,73 @@ class ToolAnDinhTanSo:
             return {"status": "FAIL", "msg": "Tần số gây nhiễu.", "conflicts": conflicts}
         return {"status": "OK", "msg": "Tần số KHẢ DỤNG.", "conflicts": []}
 
+    # --- [SỬA ĐỔI] HÀM GỘP CÁC DANH SÁCH ĐỂ KIỂM TRA TOÀN DIỆN ---
+    def check_forbidden_status(self, freq, band):
+        """
+        Kiểm tra tần số có thuộc: 
+        1. Dải cấm (Gộp cả biến FORBIDDEN_BANDS cũ và FORBIDDEN_LIST_... mới)
+        2. Dùng chung (Gộp SHARED_FREQUENCIES cũ và COMMON_LIST_... mới)
+        3. Giữ chỗ (Gộp RESERVED_LIST_... mới)
+        """
+        suffix = "VHF" if band == "VHF" else "UHF"
+        
+        # --- 1. KIỂM TRA DẢI CẤM (Forbidden) ---
+        forbidden_candidates = []
+        
+        # a. Lấy list mới (Phân loại theo VHF/UHF)
+        new_list = getattr(config, f'FORBIDDEN_LIST_{suffix}', [])
+        if isinstance(new_list, list):
+            forbidden_candidates.extend(new_list)
+        
+        # b. Lấy list cũ (Chung cho cả 2) - ĐỂ ĐẢM BẢO TƯƠNG THÍCH
+        old_list = getattr(config, 'FORBIDDEN_BANDS', [])
+        if isinstance(old_list, list):
+            forbidden_candidates.extend(old_list)
+
+        for item in forbidden_candidates:
+            # Hỗ trợ format (start, end, reason) hoặc (start, end)
+            if len(item) >= 2:
+                start = item[0]
+                end = item[1]
+                # Thêm biên bảo vệ an toàn 0.025 MHz (25kHz)
+                if (start - 0.025) <= freq <= (end + 0.025):
+                    reason = item[2] if len(item) > 2 else "Dải cấm quy hoạch"
+                    return True, f"DẢI CẤM: {reason}"
+
+        # --- 2. KIỂM TRA TẦN SỐ DÙNG CHUNG (Common Use) ---
+        common_candidates = []
+        
+        new_common = getattr(config, f'COMMON_LIST_{suffix}', [])
+        if isinstance(new_common, list): common_candidates.extend(new_common)
+            
+        old_common = getattr(config, 'SHARED_FREQUENCIES', [])
+        if isinstance(old_common, list): common_candidates.extend(old_common)
+
+        for item in common_candidates:
+            if isinstance(item, (int, float)): # Format cũ (chỉ là số)
+                if abs(freq - item) < 0.001: return True, "TẦN SỐ DÙNG CHUNG"
+            elif len(item) >= 2: # Format mới (freq, reason) hoặc (start, end, reason)
+                if isinstance(item[0], (int, float)) and isinstance(item[1], str):
+                    if abs(freq - item[0]) < 0.001: return True, f"DÙNG CHUNG: {item[1]}"
+                elif len(item) >= 3:
+                     if item[0] <= freq <= item[1]: return True, f"DÙNG CHUNG: {item[2]}"
+
+        # --- 3. KIỂM TRA TẦN SỐ GIỮ CHỖ (Reserved) ---
+        reserved_list = getattr(config, f'RESERVED_LIST_{suffix}', [])
+        if isinstance(reserved_list, list):
+            for item in reserved_list:
+                 if len(item) >= 3:
+                     if item[0] <= freq <= item[1]: return True, f"GIỮ CHỖ: {item[2]}"
+                
+        return False, ""
+
     # --- HÀM 2: TÌM CÁC TẦN SỐ KHÔNG KHẢ DỤNG ---
     def tim_cac_tan_so_khong_kha_dung(self, user_input):
         if self.df.empty: return []
         
+        # --- FIX: Kiểm tra cột freq ---
+        if 'freq' not in self.df.columns: return []
+
         user_mode_tuple = self.xac_dinh_kich_ban_user(user_input)
         band = user_input['band']
         bw = user_input['bw']
@@ -477,13 +586,13 @@ class ToolAnDinhTanSo:
                 while curr <= loop_end + 0.00001:
                     curr_rounded = round(curr, 5) 
                     
-                    is_forbidden = any((r_s - 0.025) <= curr_rounded <= (r_e + 0.025) for r_s, r_e in config.FORBIDDEN_BANDS)
-                    is_shared = any(abs(curr_rounded - f_shared) < 0.0001 for f_shared in config.SHARED_FREQUENCIES)
+                    # Dùng hàm check_forbidden mới gộp cả biến cũ và mới
+                    is_forbidden, reason = self.check_forbidden_status(curr_rounded, band)
                     
-                    is_reserved = False
+                    is_reserved_excel = False
                     for res_f in self.reserved_frequencies:
                          if abs(curr_rounded - res_f) < 0.001:
-                             is_reserved = True
+                             is_reserved_excel = True
                              break
                     
                     skip_by_note_b = False
@@ -495,7 +604,7 @@ class ToolAnDinhTanSo:
                         if in_group_2 and (user_province_clean not in allowed_group_2):
                             skip_by_note_b = True
 
-                    if not is_forbidden and not is_shared and not skip_by_note_b and not is_reserved:
+                    if not is_forbidden and not skip_by_note_b and not is_reserved_excel:
                         candidates.append(curr_rounded)
                     curr += step_mhz
         
@@ -506,6 +615,10 @@ class ToolAnDinhTanSo:
 
     def tinh_toan(self, user_input):
         if self.df.empty: return []
+        
+        # --- FIX: Kiểm tra cột freq ---
+        if 'freq' not in self.df.columns: return []
+
         results = []
         
         user_mode_tuple = self.xac_dinh_kich_ban_user(user_input)
@@ -521,8 +634,6 @@ class ToolAnDinhTanSo:
         candidates = self.generate_candidates(band, bw, mode, user_province_clean, scan_start, scan_end)
         if not candidates: return []
 
-        df_freqs = self.df['freq'].values
-        
         priority_bands = getattr(config, 'MARITIME_PRIORITY_BANDS', [])
 
         for f_check in candidates:
@@ -549,10 +660,8 @@ class ToolAnDinhTanSo:
                     break 
             
             if is_usable:
-                # --- [CHỈNH SỬA] FORM HIỂN THỊ GP & KHOẢNG CÁCH (GROUP BY LICENSE) ---
                 df_exact = self.df[np.abs(self.df['freq'] - f_check) < 0.00001]
                 
-                # Dictionary: License -> Min Distance
                 lic_dist_map = {} 
 
                 for _, row_e in df_exact.iterrows():
@@ -567,14 +676,12 @@ class ToolAnDinhTanSo:
                             d_km = geodesic((user_input['lat'], user_input['lon']), (row_e['lat'], row_e['lon'])).km
                         except: pass
                     
-                    # Logic: Nếu chưa có GP này hoặc khoảng cách mới nhỏ hơn khoảng cách cũ thì cập nhật
                     if short_lic not in lic_dist_map:
                         lic_dist_map[short_lic] = d_km
                     else:
                         if d_km < lic_dist_map[short_lic]:
                             lic_dist_map[short_lic] = d_km
 
-                # Sắp xếp theo khoảng cách tăng dần (gần nhất đứng trước)
                 sorted_items = sorted(lic_dist_map.items(), key=lambda x: x[1])
                 
                 list_formatted = []
@@ -583,7 +690,6 @@ class ToolAnDinhTanSo:
 
                 unique_count = len(list_formatted)
                 license_str = ", ".join(list_formatted)
-                # ---------------------------------------------------------------------
                 
                 is_priority = False
                 for p_start, p_end in priority_bands:

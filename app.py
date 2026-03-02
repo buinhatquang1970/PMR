@@ -344,17 +344,15 @@ else:
     <span class='tooltiptext'>
     <h4 style='margin:0; text-align:center; color:#0068C9'>HƯỚNG DẪN SỬ DỤNG NHANH</h4><hr>
     <strong>1. Chuẩn bị dữ liệu đầu vào</strong><br>
-    • File Excel (.xlsx) xuất từ phần mềm cấp phép chứa các trạm hiện hữu.<br>
-    • Các Cột cần có: Số GP, Tần số, Tọa độ, Độ cao, Khách hàng.<br>
-    • Tool tự nhận diện tên cột (VD: Freq, Frequency, Tần số...).<br><br>
+    • File Excel (.xlsx) xuất từ phần mềm cấp phép ( phiên bản windows) chứa các trạm hiện hữu.<br>
+    • Các Cột cần có: Số GP, Tần số, Tọa độ, Độ cao, Khách hàng, tỉnh thành.<br>
     <strong>2. Nhập thông số (Cột bên trái)</strong><br>
     • Nhập Tọa độ, Loại mạng (LAN/WAN), Độ cao, Dải tần.<br>
     • <strong>Đoạn băng tần quét:</strong> Chọn dải tần con (VD: 141.5 - 142.0).<br>
     • Chọn Tỉnh/TP (với mạng LAN).<br><br>
     <strong>3. Các chức năng tính toán</strong><br>
     • <strong>TÍNH TẦN SỐ KHẢ DỤNG:</strong> Tìm tần số sạch, sắp xếp theo độ ưu tiên.<br>
-    • <strong>LỌC TS KHÔNG KHẢ DỤNG:</strong> Tìm tần số gây nhiễu và nguyên nhân.<br>
-    • <strong>KIỂM TRA CỤ THỂ:</strong> Kiểm tra nhanh 1 tần số bất kỳ.<br><br>
+    • <strong>KIỂM TRA CỤ THỂ:</strong> Kiểm tra nhanh 1 tần số bất kỳ xem có khả dụng không.<br><br>
     <strong>4. Lưu kết quả</strong><br>
     • Nút <strong>📥 LƯU KẾT QUẢ (EXCEL)</strong> sẽ xuất hiện sau khi tính xong.<br><br>
     <strong>5. Cách đọc kết quả</strong><br>
@@ -438,9 +436,6 @@ else:
             st.markdown("**Tỉnh / Thành phố**")
             is_wan = "WAN" in mode
             province_selection = st.selectbox("Chọn Tỉnh/TP", ["-- Chọn Tỉnh/TP --", "HANOI", "HCM", "DANANG", "KHAC"], index=0, label_visibility="collapsed", disabled=is_wan)
-            province_manual_input = ""
-            if province_selection == "KHAC" and not is_wan:
-                province_manual_input = st.text_input("Nhập tên Tỉnh/TP cụ thể:", placeholder="Ví dụ: Bà Rịa Vũng Tàu", label_visibility="collapsed")
         
         with c_qty:
             st.markdown("**Số lượng**")
@@ -474,7 +469,21 @@ else:
                     
                     log_info(f"SESS: {st.session_state.session_id} | ACTION: UPLOAD | File: {uploaded_file.name} | Size: {size}")
                     st.rerun() 
-                btn_disabled = False 
+                
+                # --- [THÊM LOGIC VALIDATE TẠI ĐÂY NẾU MUỐN KIỂM TRA LỖI] ---
+                try:
+                    uploaded_file.seek(0)
+                    ToolAnDinhTanSo(uploaded_file)
+                    uploaded_file.seek(0)
+                    btn_disabled = False 
+                except ValueError as ve:
+                    st.error(f"❌ Lỗi dữ liệu đầu vào: {ve}")
+                    btn_disabled = True
+                except Exception as e:
+                    st.error(f"❌ Lỗi hệ thống: {e}")
+                    btn_disabled = True
+                # ---------------------------------------------------------
+                
         else:
             if st.session_state.last_uploaded_file_id is not None:
                 st.session_state.results = None
@@ -490,7 +499,8 @@ else:
         with c_btn1:
             btn_calc = st.button("TÍNH TẦN SỐ KHẢ DỤNG", type="primary", use_container_width=True, disabled=btn_disabled)
         with c_btn2:
-            btn_scan_bad_freq = st.button("LỌC TS KHÔNG KHẢ DỤNG", type="secondary", disabled=btn_disabled, use_container_width=True)
+    #       btn_scan_bad_freq = st.button("LỌC TS KHÔNG KHẢ DỤNG", type="secondary", disabled=btn_disabled, use_container_width=True)
+            btn_scan_bad_freq = False  # Gán mặc định bằng False để vô hiệu hóa chức năng này
 
     st.markdown("---")
     st.subheader("3. KIỂM TRA TẦN SỐ CỤ THỂ")
@@ -516,7 +526,6 @@ else:
         if lat == 0.0: error_msg.append("Vĩ độ chưa nhập")
         if "LAN" in mode:
             if province_selection == "-- Chọn Tỉnh/TP --": error_msg.append("Thiếu Tỉnh/TP (Bắt buộc cho mạng LAN)")
-            if province_selection == "KHAC" and province_manual_input.strip() == "": error_msg.append("Vui lòng nhập tên Tỉnh/TP cụ thể")
         
         if error_msg:
             st.error(f"⚠️ LỖI: {', '.join(error_msg)}")
@@ -524,7 +533,6 @@ else:
             log_warning(f"SESS: {st.session_state.session_id} | ACTION: CALC_ERROR | Msg: {', '.join(error_msg)}")
         else:
             prov_to_send = province_selection
-            if province_selection == "KHAC": prov_to_send = province_manual_input
             if "WAN" in mode: prov_to_send = "KHAC"
             if h_anten == 0.0: st.warning("⚠️ Lưu ý: Độ cao Anten đang là 0m.")
             
@@ -566,7 +574,6 @@ else:
              st.session_state.active_view = None
         else:
             prov_to_send = province_selection
-            if province_selection == "KHAC": prov_to_send = province_manual_input
             if "WAN" in mode: prov_to_send = "KHAC"
             
             log_info(f"SESS: {st.session_state.session_id} | ACTION: SCAN_BAD_START | Pos: {lat},{lon} | Mode: {mode} | Band: {band} | Subband: {selected_subband_label}")
@@ -613,7 +620,6 @@ else:
             log_warning(f"SESS: {st.session_state.session_id} | ACTION: CHECK_ERROR | Invalid Freq: {f_check_val}")
         else:
             prov_to_send = province_selection
-            if province_selection == "KHAC": prov_to_send = province_manual_input
             if "WAN" in mode: prov_to_send = "KHAC"
             
             log_info(f"SESS: {st.session_state.session_id} | ACTION: CHECK_START | Freq: {f_check_val} | Pos: {lat},{lon}")
