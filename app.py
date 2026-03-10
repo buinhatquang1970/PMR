@@ -11,6 +11,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from tool_tinh_toan import ToolAnDinhTanSo
 import importlib
+import gc  # --- BỔ SUNG: THƯ VIỆN GIẢI PHÓNG BỘ NHỚ CHỦ ĐỘNG ---
 
 # --- IMPORT AN TOÀN CHO BIẾN MÀU SẮC & QUY HOẠCH TẦN SỐ ---
 try:
@@ -103,6 +104,25 @@ try:
 except Exception:
     APP_VERSION = "v300126.14"
 
+
+# =============================================================================
+# TỐI ƯU HÓA BỘ NHỚ (RAM) - MỤC 2
+# =============================================================================
+@st.cache_resource(show_spinner="Đang nạp file vào bộ nhớ, vui lòng chờ...")
+def get_tool_instance(uploaded_file):
+    """Giữ đối tượng Tool trong bộ nhớ (Cache) để tránh đọc lại file nhiều lần tốn RAM"""
+    if uploaded_file is not None:
+        try:
+            uploaded_file.seek(0)
+            instance = ToolAnDinhTanSo(uploaded_file)
+            gc.collect() # Dọn RAM tức thì sau khi đọc
+            return instance
+        except Exception as e:
+            raise e
+    return None
+# =============================================================================
+
+
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title=f"PMR tool ({APP_VERSION})", layout="wide")
 
@@ -126,7 +146,7 @@ st.markdown("""
         [data-testid='stFileUploader'] section { padding: 0.5rem !important; min-height: 0px !important; }
         [data-testid='stFileUploader'] section > div > div > span { display: none; }
         [data-testid='stFileUploader'] section > div > div::after { 
-            content: "Lưu ý: Chỉ nhận file Excel(.xlsx)"; display: block; font-weight: bold; color: #333; 
+            content: "1. Xuất dữ liệu từ PM cấp phép 2.Lưu lại dưới dạng Excel Workbook( xlsx) 3.Bấm Browse files để nạp"; display: block; font-weight: bold; color: #333; 
         }
         [data-testid='stFileUploader'] section small { display: none; }
 
@@ -337,7 +357,7 @@ else:
     if os.path.exists(banner_file):
         st.image(banner_file)
     else:
-        st.warning(f"⚠️ Chưa tìm thấy file '{banner_file}'.")
+        pass # Xóa thông báo warning để đỡ rối giao diện
 
     # Nội dung hướng dẫn
     help_html = """<span class='tooltip-container'>📖 Hướng dẫn sử dụng
@@ -460,6 +480,8 @@ else:
             else:
                 current_file_id = f"{uploaded_file.name}_{getattr(uploaded_file, 'size', '')}"
                 if st.session_state.last_uploaded_file_id != current_file_id:
+                    # --- XÓA CACHE NẾU FILE MỚI ĐƯỢC NẠP ĐỂ GIẢI PHÓNG RAM CHO FILE CŨ ---
+                    st.cache_resource.clear() 
                     st.session_state.results = None
                     st.session_state.input_snapshot = None
                     st.session_state.check_result = None
@@ -470,11 +492,9 @@ else:
                     log_info(f"SESS: {st.session_state.session_id} | ACTION: UPLOAD | File: {uploaded_file.name} | Size: {size}")
                     st.rerun() 
                 
-                # --- [THÊM LOGIC VALIDATE TẠI ĐÂY NẾU MUỐN KIỂM TRA LỖI] ---
                 try:
-                    uploaded_file.seek(0)
-                    ToolAnDinhTanSo(uploaded_file)
-                    uploaded_file.seek(0)
+                    # --- GỌI HÀM CACHE ĐỂ KHÔNG TẠO BẢN SAO BỘ NHỚ NHIỀU LẦN ---
+                    get_tool_instance(uploaded_file)
                     btn_disabled = False 
                 except ValueError as ve:
                     st.error(f"❌ Lỗi dữ liệu đầu vào: {ve}")
@@ -482,10 +502,10 @@ else:
                 except Exception as e:
                     st.error(f"❌ Lỗi hệ thống: {e}")
                     btn_disabled = True
-                # ---------------------------------------------------------
                 
         else:
             if st.session_state.last_uploaded_file_id is not None:
+                st.cache_resource.clear() # Dọn dẹp cache nếu người dùng nhấn xóa file
                 st.session_state.results = None
                 st.session_state.input_snapshot = None
                 st.session_state.check_result = None
@@ -540,7 +560,9 @@ else:
 
             with st.spinner('Đang tính toán...'):
                 try:
-                    tool = ToolAnDinhTanSo(uploaded_file)
+                    # --- SỬ DỤNG HÀM CACHE LẤY INSTANCE THAY VÌ TẠO MỚI ---
+                    tool = get_tool_instance(uploaded_file)
+                    
                     user_input = {
                         "lat": lat, "lon": lon,
                         "province_code": prov_to_send,
@@ -555,6 +577,9 @@ else:
                         "GIÁ TRỊ": [APP_VERSION, f"{lon:.5f}", f"{lat:.5f}", prov_to_send if "LAN" in mode else "Toàn quốc (WAN)", h_anten, band, selected_subband_label, bw, mode, qty]
                     }
                     log_info(f"SESS: {st.session_state.session_id} | ACTION: CALC_SUCCESS | Found: {len(results)} freqs")
+                    
+                    # --- ÉP GIẢI PHÓNG RAM NGAY SAU KHI TÍNH TOÁN XONG ---
+                    gc.collect()
 
                 except Exception as e:
                     log_exception(f"SESS: {st.session_state.session_id} | ACTION: CALC_EXCEPTION | Error: {e}")
@@ -580,7 +605,9 @@ else:
 
             with st.spinner("Đang quét dải tần đã chọn..."):
                 try:
-                    tool = ToolAnDinhTanSo(uploaded_file)
+                    # --- SỬ DỤNG HÀM CACHE ---
+                    tool = get_tool_instance(uploaded_file)
+                    
                     user_input = {
                         "lat": lat, "lon": lon,
                         "province_code": prov_to_send,
@@ -597,6 +624,9 @@ else:
                     }
                     
                     log_info(f"SESS: {st.session_state.session_id} | ACTION: SCAN_BAD_SUCCESS | Found: {len(bad_results)} bad freqs")
+                    
+                    # --- GIẢI PHÓNG RAM ---
+                    gc.collect()
 
                 except Exception as e:
                     log_exception(f"SESS: {st.session_state.session_id} | ACTION: SCAN_BAD_EXCEPTION | Error: {e}")
@@ -626,7 +656,9 @@ else:
 
             with st.spinner(f"Đang kiểm tra tần số {f_check_val} MHz..."):
                 try:
-                    tool = ToolAnDinhTanSo(uploaded_file)
+                    # --- SỬ DỤNG HÀM CACHE ---
+                    tool = get_tool_instance(uploaded_file)
+                    
                     user_input = {
                         "lat": lat, "lon": lon,
                         "province_code": prov_to_send,
@@ -638,6 +670,9 @@ else:
                     
                     status = check_res.get("status", "UNKNOWN")
                     log_info(f"SESS: {st.session_state.session_id} | ACTION: CHECK_SUCCESS | Status: {status}")
+                    
+                    # --- GIẢI PHÓNG RAM ---
+                    gc.collect()
 
                 except Exception as e:
                     log_exception(f"SESS: {st.session_state.session_id} | ACTION: CHECK_EXCEPTION | Error: {e}")
@@ -796,3 +831,8 @@ else:
                     }, inplace=True)
 
                     st.table(df_conflict)
+
+# =============================================================================
+# --- LUÔN GIẢI PHÓNG BỘ NHỚ SAU MỖI LẦN RENDER TRANG CHỐNG TRÀN RAM ---
+gc.collect()
+# =============================================================================
