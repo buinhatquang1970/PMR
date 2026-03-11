@@ -458,7 +458,7 @@ else:
             province_selection = st.selectbox("Chọn Tỉnh/TP", ["-- Chọn Tỉnh/TP --", "HANOI", "HCM", "DANANG", "KHAC"], index=0, label_visibility="collapsed", disabled=is_wan)
         
         with c_qty:
-            st.markdown("**Số lượng**")
+            st.markdown("**Số lượng tần số**")
             qty = st.number_input("Số lượng", value=1, min_value=1, label_visibility="collapsed")
         
         with c_space:
