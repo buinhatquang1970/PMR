@@ -416,7 +416,7 @@ class ToolAnDinhTanSo:
                 dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
             except: continue
             
-            if dist_km < 0.05: continue
+#           if dist_km < 0.05: continue
             
             delta_f = abs(f_check - row['freq']) * 1000 
             rx_bw = row['bw']
@@ -537,7 +537,7 @@ class ToolAnDinhTanSo:
                     dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
                 except: continue
                 
-                if dist_km < 0.05: continue
+#               if dist_km < 0.05: continue
                 
                 delta_f = abs(f_check - row['freq']) * 1000 
                 rx_bw = row['bw']
@@ -647,7 +647,7 @@ class ToolAnDinhTanSo:
                     dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
                 except: continue
                 
-                if dist_km < 0.05: continue
+#               if dist_km < 0.05: continue
                 
                 delta_f = abs(f_check - row['freq']) * 1000 
                 rx_bw = row['bw']
