@@ -13,6 +13,30 @@ from tool_tinh_toan import ToolAnDinhTanSo
 import importlib
 import gc  # --- BỔ SUNG: THƯ VIỆN GIẢI PHÓNG BỘ NHỚ CHỦ ĐỘNG ---
 
+ACCESS_LOG_FILE = 'total_access.txt'
+
+def get_total_access():
+    """Đọc tổng lượt truy cập từ file"""
+    if not os.path.exists(ACCESS_LOG_FILE):
+        return 0
+    with open(ACCESS_LOG_FILE, 'r') as f:
+        try:
+            return int(f.read().strip())
+        except:
+            return 0
+
+def increment_total_access():
+    """Tăng tổng lượt truy cập và lưu vào file"""
+    count = get_total_access() + 1
+    with open(ACCESS_LOG_FILE, 'w') as f:
+        f.write(str(count))
+    return count
+
+@st.cache_resource
+def get_counted_sessions():
+    """Bộ nhớ tạm để lưu danh sách session_id đã được đếm trong phiên chạy này"""
+    return set()
+
 # --- IMPORT AN TOÀN CHO BIẾN MÀU SẮC & QUY HOẠCH TẦN SỐ ---
 try:
     import config
@@ -109,19 +133,24 @@ except Exception:
 # TỐI ƯU HÓA BỘ NHỚ (RAM) - MỤC 2
 # =============================================================================
 @st.cache_resource(show_spinner="Đang nạp file vào bộ nhớ, vui lòng chờ...")
-def get_tool_instance(uploaded_file):
+def get_tool_instance(uploaded_files):
     """Giữ đối tượng Tool trong bộ nhớ (Cache) để tránh đọc lại file nhiều lần tốn RAM"""
-    if uploaded_file is not None:
+    if uploaded_files:
         try:
-            uploaded_file.seek(0)
-            instance = ToolAnDinhTanSo(uploaded_file)
+            instance = ToolAnDinhTanSo(uploaded_files)
             gc.collect() # Dọn RAM tức thì sau khi đọc
             return instance
         except Exception as e:
             raise e
     return None
 # =============================================================================
-
+# =============================================================================
+# THEO DÕI SỐ LƯỢNG NGƯỜI DÙNG ONLINE
+# =============================================================================
+@st.cache_resource
+def get_active_users_dict():
+    """Tạo một từ điển dùng chung để lưu thời gian hoạt động của tất cả người dùng"""
+    return {}
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title=f"PMR tool ({APP_VERSION})", layout="wide")
@@ -146,7 +175,7 @@ st.markdown("""
         [data-testid='stFileUploader'] section { padding: 0.5rem !important; min-height: 0px !important; }
         [data-testid='stFileUploader'] section > div > div > span { display: none; }
         [data-testid='stFileUploader'] section > div > div::after { 
-            content: "1. Xuất dữ liệu từ PM cấp phép 2.Lưu lại dưới dạng Excel Workbook( xlsx) 3.Bấm Browse files để nạp"; display: block; font-weight: bold; color: #333; 
+            content: "1. Xuất dữ liệu mới nhất từ PM cấp phép 2.Lưu dưới dạng Excel Workbook( xlsx)3.Bấm Browse để nạp( Tối đa 2 files)"; display: block; font-weight: bold; color: #333; 
         }
         [data-testid='stFileUploader'] section small { display: none; }
 
@@ -160,6 +189,21 @@ st.markdown("""
         
         div[role="dialog"] { width: 50vw !important; max-width: 50vw !important; left: auto !important; right: 0 !important; top: 0 !important; bottom: 0 !important; height: 100vh !important; margin: 0 !important; border-radius: 0 !important; transform: none !important; display: flex; flex-direction: column; }
         
+        /* ĐOẠN CSS THU NHỎ POP-UP CHUYỂN ĐỔI TỌA ĐỘ (ĐÃ FIX LỖI EMOJI) */
+        div[role="dialog"][aria-label*="Decimal"] {
+            width: 30vw !important;             
+            min-width: 400px !important;        
+            height: max-content !important;     
+            left: 50% !important;               
+            right: auto !important;
+            top: 50% !important;                
+            bottom: auto !important;
+            transform: translate(-50%, -50%) !important; 
+            border-radius: 15px !important;     
+            padding-bottom: 20px !important;
+        }padding-bottom: 20px !important;
+        }
+
         div[data-testid="stSelectbox"] > div, div[data-testid="stSelectbox"] button, div[data-testid="stSelectbox"] select { min-width: 60px !important; max-width: 100% !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; display: inline-block !important; }
         .stTextInput, .stSelectbox, .stNumberInput, .stDateInput { min-width: 50px !important; }
 
@@ -202,6 +246,30 @@ st.markdown("""
 
 # --- CÁC HÀM HỖ TRỢ ---
 def dms_to_decimal(d, m, s): return d + (m / 60.0) + (s / 3600.0)
+
+# =========================================================================
+# HÀM CONVERT ĐƯỢC NÂNG CẤP XỬ LÝ SỐ THẬP PHÂN TUẦN HOÀN (.333333)
+# =========================================================================
+def decimal_to_dms(decimal):
+    sign = -1 if decimal < 0 else 1
+    decimal = abs(decimal)
+    
+    # Tính tổng số giây và làm tròn tới 2 chữ số thập phân
+    total_seconds = round(decimal * 3600, 2)
+    
+    # Bắt các trường hợp lỗi số thập phân tuần hoàn bị cắt cụt 
+    # (như .33333 hoặc .66666) khiến tổng giây bị hụt một chút (.98, .99). 
+    # Ép làm tròn lên số nguyên để khắc phục.
+    fractional_part = total_seconds - int(total_seconds)
+    if fractional_part >= 0.98:
+        total_seconds = round(total_seconds)
+        
+    d = int(total_seconds // 3600)
+    m = int((total_seconds % 3600) // 60)
+    s = round(total_seconds % 60, 2)
+    
+    return d * sign, m, s
+
 def neutralize_excel_value(val):
     if pd.isna(val): return val
     s = str(val)
@@ -238,15 +306,55 @@ def show_map_popup(lat, lon):
     st.write(f"📍 Tọa độ: {lat:.5f}, {lon:.5f}")
     components.iframe(map_url, height=600)
 
+# --- HÀM CALLBACK CHUYỂN ĐỔI TỌA ĐỘ ---
+def handle_conversion():
+    # Lấy giá trị thập phân người dùng vừa nhập trong Pop-up
+    dec_lon = st.session_state.get("pop_lon", 0.0)
+    dec_lat = st.session_state.get("pop_lat", 0.0)
+    
+    if dec_lat != 0.0 or dec_lon != 0.0:
+        lat_d, lat_m, lat_s = decimal_to_dms(dec_lat)
+        lon_d, lon_m, lon_s = decimal_to_dms(dec_lon)
+        
+        # Cập nhật thẳng vào Session State TRƯỚC khi màn hình được vẽ lại
+        st.session_state.lat_d = lat_d
+        st.session_state.lat_m = lat_m
+        st.session_state.lat_s = lat_s
+        st.session_state.lon_d = lon_d
+        st.session_state.lon_m = lon_m
+        st.session_state.lon_s = lon_s
+
+# --- POP-UP CONVERT ---
+@st.dialog("🔄 Nhập Tọa Độ Thập Phân (Decimal -> DMS)")
+def show_convert_popup():
+    st.markdown("Nhập tọa độ dạng thập phân để quy đổi tự động sang Độ, Phút, Giây:")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.number_input("Kinh độ (Longitude)", value=0.0, format="%.6f", key="pop_lon")
+    with c2:
+        st.number_input("Vĩ độ (Latitude)", value=0.0, format="%.6f", key="pop_lat")
+        
+    # Gắn hàm callback vào nút bấm (on_click=handle_conversion)
+    if st.button("🧮 CHUYỂN ĐỔI & ÁP DỤNG", type="primary", use_container_width=True, on_click=handle_conversion):
+        st.rerun() # Tự động đóng popup và tải lại giao diện
+
 try:
     import openpyxl
 except:
     pass
 
-# --- XỬ LÝ KHỞI TẠO SESSION ---
+# --- XỬ LÝ KHỞI TẠO SESSION & ĐẾM TRUY CẬP ---
 if 'session_id' not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())[:8] 
     log_info(f"NEW SESSION STARTED | ID: {st.session_state.session_id} | App Version: {APP_VERSION}")
+    
+    # --- [MỚI] KIỂM TRA CHẶN F5 VÀ ĐẾM LƯỢT TRUY CẬP TỔNG ---
+    counted_sessions = get_counted_sessions()
+    if st.session_state.session_id not in counted_sessions:
+        increment_total_access() # Cộng vào file tổng
+        counted_sessions.add(st.session_state.session_id) # Đánh dấu đã đếm
+
+# --- CÁC BIẾN SESSION MẶC ĐỊNH (GIỮ NGUYÊN) ---
 if 'results' not in st.session_state: st.session_state.results = None
 if 'input_snapshot' not in st.session_state: st.session_state.input_snapshot = None
 if 'last_uploaded_file_id' not in st.session_state: st.session_state.last_uploaded_file_id = None
@@ -255,6 +363,25 @@ if 'bad_freq_results' not in st.session_state: st.session_state.bad_freq_results
 if 'active_view' not in st.session_state: st.session_state.active_view = None
 if 'admin_logged_in' not in st.session_state: st.session_state.admin_logged_in = False
 if 'auto_refresh' not in st.session_state: st.session_state.auto_refresh = False
+
+# --- [MỚI] CẬP NHẬT TRẠNG THÁI ONLINE CỦA NGƯỜI DÙNG ---
+active_users = get_active_users_dict()
+active_users[st.session_state.session_id] = time.time()
+
+
+
+# --- Khởi tạo giá trị mặc định cho Tọa độ để tránh lỗi Widget Value ---
+if 'lon_d' not in st.session_state: st.session_state.lon_d = 105
+if 'lon_m' not in st.session_state: st.session_state.lon_m = 0
+if 'lon_s' not in st.session_state: st.session_state.lon_s = 0.0
+if 'lat_d' not in st.session_state: st.session_state.lat_d = 21
+if 'lat_m' not in st.session_state: st.session_state.lat_m = 0
+if 'lat_s' not in st.session_state: st.session_state.lat_s = 0.0
+
+# --- CẬP NHẬT TRẠNG THÁI ONLINE CỦA NGƯỜI DÙNG ---
+active_users = get_active_users_dict()
+# Ghi nhận thời điểm hiện tại (bằng giây) mà người dùng này vừa thao tác
+active_users[st.session_state.session_id] = time.time()
 
 # =========================================================================
 # PHÂN LUỒNG: KIỂM TRA QUERY PARAMS ĐỂ XÁC ĐỊNH GIAO DIỆN ADMIN
@@ -288,18 +415,45 @@ if is_admin_route:
                     else:
                         st.error("Mật khẩu không đúng!")
     else:
-        # Khi đã đăng nhập thành công
+    
+# Khi đã đăng nhập thành công
         st.success(f"Xin chào Admin! (Session: {st.session_state.session_id})")
         
+        # --- TÍNH TOÁN SỐ NGƯỜI ONLINE (TRONG 5 PHÚT QUA) ---
+        current_time = time.time()
+        timeout_seconds = 300 # 5 phút = 300 giây
+        
+        # Đếm những ai vừa thao tác trong vòng 5 phút trở lại đây
+        online_count = sum(1 for last_active in active_users.values() if current_time - last_active < timeout_seconds)
+        
+        # Khi đã đăng nhập thành công
+        # st.success(f"Xin chào Admin! (Session: {st.session_state.session_id})")
+        
+        # --- LẤY DỮ LIỆU ĐẾM ---
+        total_visits = get_total_access()
+        
+        # Đếm số người online trong 5 phút qua và dọn dẹp RAM
+        current_time = time.time()
+        timeout_seconds = 300 
+        users_to_remove = [sid for sid, last_active in active_users.items() if current_time - last_active > timeout_seconds]
+        for sid in users_to_remove:
+            del active_users[sid]
+        current_online = len(active_users)
+        
         # --- THANH CÔNG CỤ ADMIN ---
-        col_act1, col_act2, col_act3 = st.columns([1.5, 3, 1])
+        col_act1, col_act2, col_act3 = st.columns([1.5, 1.5, 1.5])
         with col_act1:
+            st.metric(label="🟢 Đang Online", value=f"{current_online} người")
             if st.button("Đăng xuất", type="secondary"):
                 st.session_state.admin_logged_in = False
                 st.rerun()
-        
+                
+        with col_act2:
+            st.metric(label="📊 Tổng lượt truy cập", value=f"{total_visits} lượt")
+            
         with col_act3:
-            # Checkbox tự động refresh
+            st.markdown("<div style='margin-top: 35px;'></div>", unsafe_allow_html=True) # Căn lề cho đẹp
+            # Checkbox tự động refresh vẫn giữ nguyên
             auto_refresh = st.checkbox("🔄 Tự động làm mới (30s)", value=st.session_state.auto_refresh)
             st.session_state.auto_refresh = auto_refresh
             
@@ -364,15 +518,17 @@ else:
     <span class='tooltiptext'>
     <h4 style='margin:0; text-align:center; color:#0068C9'>HƯỚNG DẪN SỬ DỤNG NHANH</h4><hr>
     <strong>1. Chuẩn bị dữ liệu đầu vào</strong><br>
-    • File Excel (.xlsx) xuất từ phần mềm cấp phép ( phiên bản windows) chứa các trạm hiện hữu.<br>
+    • File Excel (.xlsx) xuất từ phần mềm cấp phép ( phiên bản windows) chứa các trạm hiện hữu. Lưu ý dữ liệu xuất phải là dữ liệu mới nhất có thể<br>
+    • Cho phép nạp tối đã 02 files<br>
     • Các Cột cần có: Số GP, Tần số, Tọa độ, Độ cao, Khách hàng, tỉnh thành.<br>
     <strong>2. Nhập thông số (Cột bên trái)</strong><br>
     • Nhập Tọa độ, Loại mạng (LAN/WAN), Độ cao, Dải tần.<br>
+    • Tiện ích Convert tọa độ cho phép nhập dưới dạng thập phân và tự động điền vào dưới dạng độ,phút giây.<br>
     • <strong>Đoạn băng tần quét:</strong> Chọn dải tần con (VD: 141.5 - 142.0).<br>
     • Chọn Tỉnh/TP (với mạng LAN).<br><br>
     <strong>3. Các chức năng tính toán</strong><br>
     • <strong>TÍNH TẦN SỐ KHẢ DỤNG:</strong> Tìm tần số sạch, sắp xếp theo độ ưu tiên.<br>
-    • <strong>KIỂM TRA CỤ THỂ:</strong> Kiểm tra nhanh 1 tần số bất kỳ xem có khả dụng không.<br><br>
+    • <strong>KIỂM TRA CỤ THỂ:</strong> Kiểm tra nhanh 1 tần số bất kỳ xem có khả dụng không. Cần nhập tọa độ, dải tần, loại mạng, độ cao ( LAN), băng thông và tần số cần kiểm tra<br><br>
     <strong>4. Lưu kết quả</strong><br>
     • Nút <strong>📥 LƯU KẾT QUẢ (EXCEL)</strong> sẽ xuất hiện sau khi tính xong.<br><br>
     <strong>5. Cách đọc kết quả</strong><br>
@@ -394,24 +550,28 @@ else:
         with c_grp1:
             st.markdown("📍 **Kinh độ (Longitude)**")
             c1_d, c1_m, c1_s = st.columns([1, 1, 1.2])
-            with c1_d: lon_d = st.number_input("Độ", 0, 180, 105, 1, key="lon_d", label_visibility="collapsed")
-            with c1_m: lon_m = st.number_input("Phút", 0, 59, 0, 1, key="lon_m", label_visibility="collapsed")
-            with c1_s: lon_s = st.number_input("Giây", 0.0, 59.99, 0.0, 0.1, "%.2f", key="lon_s", label_visibility="collapsed")
+            with c1_d: lon_d = st.number_input("Độ", min_value=0, max_value=180, step=1, key="lon_d", label_visibility="collapsed")
+            with c1_m: lon_m = st.number_input("Phút", min_value=0, max_value=59, step=1, key="lon_m", label_visibility="collapsed")
+            with c1_s: lon_s = st.number_input("Giây", min_value=0.0, max_value=59.99, step=0.1, format="%.2f", key="lon_s", label_visibility="collapsed")
             lon = dms_to_decimal(lon_d, lon_m, lon_s)
 
         with c_grp2:
             st.markdown("📍 **Vĩ độ (Latitude)**")
             c2_d, c2_m, c2_s = st.columns([1, 1, 1.2])
-            with c2_d: lat_d = st.number_input("Độ", 0, 90, 21, 1, key="lat_d", label_visibility="collapsed")
-            with c2_m: lat_m = st.number_input("Phút", 0, 59, 0, 1, key="lat_m", label_visibility="collapsed")
-            with c2_s: lat_s = st.number_input("Giây", 0.0, 59.99, 0.0, 0.1, "%.2f", key="lat_s", label_visibility="collapsed")
+            with c2_d: lat_d = st.number_input("Độ", min_value=0, max_value=90, step=1, key="lat_d", label_visibility="collapsed")
+            with c2_m: lat_m = st.number_input("Phút", min_value=0, max_value=59, step=1, key="lat_m", label_visibility="collapsed")
+            with c2_s: lat_s = st.number_input("Giây", min_value=0.0, max_value=59.99, step=0.1, format="%.2f", key="lat_s", label_visibility="collapsed")
             lat = dms_to_decimal(lat_d, lat_m, lat_s)
 
         with c_grp3:
             st.markdown("🗺️ **Bản đồ**")
-            if lat != 0 and lon != 0:
-                if st.button("👉 Xem vị trí trên bản đồ", use_container_width=True): show_map_popup(lat, lon)
-            else: st.button("👉 Xem vị trí trên bản đồ", disabled=True, use_container_width=True)
+            col_conv, col_map = st.columns(2)
+            with col_conv:
+                if st.button("Tọa độ Decimal", use_container_width=True): show_convert_popup()
+            with col_map:
+                if lat != 0 and lon != 0:
+                    if st.button("Vị trí trên map", use_container_width=True): show_map_popup(lat, lon)
+                else: st.button("Vị trí trên map", disabled=True, use_container_width=True)
 
         c_mode, c_h, c_band, c_subband, c_bw = st.columns([1.2, 0.7, 0.7, 1.6, 0.8], gap="small")
         
@@ -466,46 +626,50 @@ else:
 
     with col_layout_right:
         st.subheader("2. NẠP DỮ LIỆU ĐẦU VÀO")
-        uploaded_file = st.file_uploader("Label ẩn", type=None, label_visibility="collapsed")
+        uploaded_files = st.file_uploader("Label ẩn", type=None, label_visibility="collapsed", accept_multiple_files=True)
         
         btn_disabled = True 
-        if uploaded_file is not None:
-            size = getattr(uploaded_file, "size", None)
-            if size is not None and size > MAX_UPLOAD_BYTES:
-                st.error(f"File quá lớn (> {MAX_UPLOAD_MB} MB).")
-                btn_disabled = True
-            elif not uploaded_file.name.lower().endswith('.xlsx'):
-                st.error("⚠️ Cần nhập file định dạng xlsx")
+        if uploaded_files:
+            if len(uploaded_files) > 2:
+                st.error("⚠️ Bạn chỉ được phép nạp tối đa 2 files cùng lúc.")
                 btn_disabled = True
             else:
-                current_file_id = f"{uploaded_file.name}_{getattr(uploaded_file, 'size', '')}"
-                if st.session_state.last_uploaded_file_id != current_file_id:
-                    # --- XÓA CACHE NẾU FILE MỚI ĐƯỢC NẠP ĐỂ GIẢI PHÓNG RAM CHO FILE CŨ ---
-                    st.cache_resource.clear() 
-                    st.session_state.results = None
-                    st.session_state.input_snapshot = None
-                    st.session_state.check_result = None
-                    st.session_state.bad_freq_results = None
-                    st.session_state.active_view = None
-                    st.session_state.last_uploaded_file_id = current_file_id
+                total_size = sum(getattr(f, "size", 0) for f in uploaded_files)
+                if total_size > MAX_UPLOAD_BYTES:
+                    st.error(f"Tổng dung lượng files quá lớn (> {MAX_UPLOAD_MB} MB).")
+                    btn_disabled = True
+                elif not all(f.name.lower().endswith('.xlsx') for f in uploaded_files):
+                    st.error("⚠️ Tất cả các file nạp vào phải có định dạng .xlsx")
+                    btn_disabled = True
+                else:
+                    current_file_id = "_".join([f"{f.name}_{getattr(f, 'size', '')}" for f in uploaded_files])
                     
-                    log_info(f"SESS: {st.session_state.session_id} | ACTION: UPLOAD | File: {uploaded_file.name} | Size: {size}")
-                    st.rerun() 
-                
-                try:
-                    # --- GỌI HÀM CACHE ĐỂ KHÔNG TẠO BẢN SAO BỘ NHỚ NHIỀU LẦN ---
-                    get_tool_instance(uploaded_file)
-                    btn_disabled = False 
-                except ValueError as ve:
-                    st.error(f"❌ Lỗi dữ liệu đầu vào: {ve}")
-                    btn_disabled = True
-                except Exception as e:
-                    st.error(f"❌ Lỗi hệ thống: {e}")
-                    btn_disabled = True
-                
+                    if st.session_state.last_uploaded_file_id != current_file_id:
+                        st.cache_resource.clear() 
+                        st.session_state.results = None
+                        st.session_state.input_snapshot = None
+                        st.session_state.check_result = None
+                        st.session_state.bad_freq_results = None
+                        st.session_state.active_view = None
+                        st.session_state.last_uploaded_file_id = current_file_id
+                        
+                        file_names = ", ".join([f.name for f in uploaded_files])
+                        log_info(f"SESS: {st.session_state.session_id} | ACTION: UPLOAD | Files: {file_names} | Total Size: {total_size}")
+                        st.rerun() 
+                    
+                    try:
+                        get_tool_instance(uploaded_files)
+                        btn_disabled = False 
+                    except ValueError as ve:
+                        st.error(f"❌ Lỗi dữ liệu đầu vào: {ve}")
+                        btn_disabled = True
+                    except Exception as e:
+                        st.error(f"❌ Lỗi hệ thống: {e}")
+                        btn_disabled = True
+                        
         else:
             if st.session_state.last_uploaded_file_id is not None:
-                st.cache_resource.clear() # Dọn dẹp cache nếu người dùng nhấn xóa file
+                st.cache_resource.clear() 
                 st.session_state.results = None
                 st.session_state.input_snapshot = None
                 st.session_state.check_result = None
@@ -519,7 +683,6 @@ else:
         with c_btn1:
             btn_calc = st.button("TÍNH TẦN SỐ KHẢ DỤNG", type="primary", use_container_width=True, disabled=btn_disabled)
         with c_btn2:
-    #       btn_scan_bad_freq = st.button("LỌC TS KHÔNG KHẢ DỤNG", type="secondary", disabled=btn_disabled, use_container_width=True)
             btn_scan_bad_freq = False  # Gán mặc định bằng False để vô hiệu hóa chức năng này
 
     st.markdown("---")
@@ -556,12 +719,11 @@ else:
             if "WAN" in mode: prov_to_send = "KHAC"
             if h_anten == 0.0: st.warning("⚠️ Lưu ý: Độ cao Anten đang là 0m.")
             
-            log_info(f"SESS: {st.session_state.session_id} | ACTION: CALC_START | Pos: {lat},{lon} | Mode: {mode} | Band: {band} | H: {h_anten} | Subband: {selected_subband_label} | Prov: {prov_to_send}")
-
+            log_info(f"SESS: {st.session_state.session_id} |CALC_START|Pos:{lat:.6f},{lon:.6f}|Mode:{mode}|Band:{band}|H:{h_anten}|Subband:{selected_subband_label}|Prov:{prov_to_send}")
             with st.spinner('Đang tính toán...'):
                 try:
                     # --- SỬ DỤNG HÀM CACHE LẤY INSTANCE THAY VÌ TẠO MỚI ---
-                    tool = get_tool_instance(uploaded_file)
+                    tool = get_tool_instance(uploaded_files)
                     
                     user_input = {
                         "lat": lat, "lon": lon,
@@ -591,7 +753,7 @@ else:
         st.session_state.check_result = None
         st.session_state.active_view = "UNAVAILABLE"
         
-        if uploaded_file is None:
+        if not uploaded_files:
             st.error("Vui lòng nạp file Excel trước.")
             st.session_state.active_view = None
         elif btn_disabled: 
@@ -601,12 +763,11 @@ else:
             prov_to_send = province_selection
             if "WAN" in mode: prov_to_send = "KHAC"
             
-            log_info(f"SESS: {st.session_state.session_id} | ACTION: SCAN_BAD_START | Pos: {lat},{lon} | Mode: {mode} | Band: {band} | Subband: {selected_subband_label}")
-
+            log_info(f"SESS: {st.session_state.session_id} | ACTION: SCAN_BAD_START | Pos: {lat:.6f},{lon:.6f} | Mode: {mode} | Band: {band} | Subband: {selected_subband_label}")
             with st.spinner("Đang quét dải tần đã chọn..."):
                 try:
                     # --- SỬ DỤNG HÀM CACHE ---
-                    tool = get_tool_instance(uploaded_file)
+                    tool = get_tool_instance(uploaded_files)
                     
                     user_input = {
                         "lat": lat, "lon": lon,
@@ -638,7 +799,7 @@ else:
         st.session_state.bad_freq_results = None
         st.session_state.active_view = "CHECK_SPECIFIC"
 
-        if uploaded_file is None:
+        if not uploaded_files:
             st.error("Vui lòng nạp file Excel trước.")
             st.session_state.active_view = None
         elif btn_disabled:
@@ -652,12 +813,11 @@ else:
             prov_to_send = province_selection
             if "WAN" in mode: prov_to_send = "KHAC"
             
-            log_info(f"SESS: {st.session_state.session_id} | ACTION: CHECK_START | Freq: {f_check_val} | Pos: {lat},{lon}")
-
+            log_info(f"SESS: {st.session_state.session_id} | CHECK_START | Freq: {f_check_val} | Pos: {lat:.6f},{lon:.6f}")
             with st.spinner(f"Đang kiểm tra tần số {f_check_val} MHz..."):
                 try:
                     # --- SỬ DỤNG HÀM CACHE ---
-                    tool = get_tool_instance(uploaded_file)
+                    tool = get_tool_instance(uploaded_files)
                     
                     user_input = {
                         "lat": lat, "lon": lon,
@@ -737,9 +897,11 @@ else:
                 
                 now = datetime.now()
                 time_str = now.strftime("%H%M%S_%d%m%Y")
+                
                 input_file_name = "data"
-                if uploaded_file is not None:
-                    input_file_name = os.path.splitext(uploaded_file.name)[0]
+                if uploaded_files:
+                    # Lấy tên của 1-2 file đầu tiên ghép lại để tải về
+                    input_file_name = "_".join([os.path.splitext(f.name)[0] for f in uploaded_files][:2])
                     
                 dl_file_name = f"DS_TanSo_KhaDung_{time_str}_{input_file_name}.xlsx"
                 
@@ -791,9 +953,10 @@ else:
                 
             now = datetime.now()
             time_str = now.strftime("%H%M%S_%d%m%Y")
+            
             input_file_name = "data"
-            if uploaded_file is not None:
-                input_file_name = os.path.splitext(uploaded_file.name)[0]
+            if uploaded_files:
+                input_file_name = "_".join([os.path.splitext(f.name)[0] for f in uploaded_files][:2])
                 
             dl_file_name = f"DS_TanSo_KhongKhaDung_{time_str}_{input_file_name}.xlsx"
             
