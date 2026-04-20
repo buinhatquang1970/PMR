@@ -174,19 +174,25 @@ st.markdown("""
         [data-testid='stFileUploader'] { margin-bottom: -30px !important; }
         [data-testid='stFileUploader'] section { padding: 0.5rem !important; min-height: 0px !important; }
         
-        /* Ẩn dòng chữ tiếng Anh mặc định một cách an toàn */
-        [data-testid="stFileDropzoneInstructions"] > div > span { display: none; }
-        [data-testid="stFileDropzoneInstructions"] > div > small { display: none; }
-        
-        /* Chèn dòng hướng dẫn tiếng Việt (đã tự động xuống dòng cho đẹp) */
-        [data-testid="stFileDropzoneInstructions"]::before {
-            content: "1. Xuất dữ liệu từ PM cấp phép \\A 2. Lưu dưới dạng Excel (.xlsx) \\A 3. Bấm Browse files để nạp (Tối đa 2 files)";
+        /* 1. Ẩn chữ tiếng Anh mặc định (dùng lại cách cũ của bạn vì nó tương thích tốt) */
+        [data-testid='stFileUploader'] section > div > div > span { display: none; }
+        [data-testid='stFileUploader'] section small { display: none; }
+
+        /* 2. Phục hồi lại dòng chữ hướng dẫn của bạn (Có thêm tự động xuống dòng cho đẹp) */
+        [data-testid='stFileUploader'] section > div > div::after { 
+            content: "1. Xuất dữ liệu mới nhất từ PM cấp phép \\A 2. Lưu dưới dạng Excel Workbook (.xlsx) \\A 3.Nạp files dữ liệu (Tối đa 2 files)"; 
             white-space: pre-wrap;
-            display: block;
-            font-weight: bold;
-            color: #333;
+            display: block; 
+            font-weight: bold; 
+            color: #333; 
             text-align: center;
-            padding-bottom: 5px;
+            padding-top: 5px;
+        }
+
+        /* 3. [QUAN TRỌNG NHẤT] Lệnh cứu lại nút X xóa file */
+        [data-testid="stUploadedFile"] span, 
+        [data-testid="stFileUploader"] button span {
+            display: inline-flex !important;
         }
 
         div[data-testid="stColumn"] button[kind="secondary"] { color: #d93025 !important; font-weight: bold !important; border: 1px solid #ddd !important; background-color: #fff !important; width: 100%; transition: all 0.3s; }
