@@ -276,8 +276,22 @@ def neutralize_excel_value(val):
     if s and s[0] in ('=', '+', '-', '@'): return "'" + s
     return s
 def neutralize_df_for_excel(df):
-    try: return df.applymap(neutralize_excel_value)
-    except Exception: return df.astype(str).applymap(neutralize_excel_value)
+    """Xử lý rác Excel, tương thích cả Pandas cũ (applymap) và mới (map)"""
+    try:
+        # Kiểm tra nếu Pandas là bản mới (có hàm map)
+        if hasattr(df, 'map'):
+            try: 
+                return df.map(neutralize_excel_value)
+            except Exception: 
+                return df.astype(str).map(neutralize_excel_value)
+        # Nếu là Pandas bản cũ
+        else:
+            try: 
+                return df.applymap(neutralize_excel_value)
+            except Exception: 
+                return df.astype(str).applymap(neutralize_excel_value)
+    except Exception:
+        return df # Fallback an toàn nếu có lỗi bất ngờ
 def to_excel(df_input, df_result):
     output = io.BytesIO()
     if df_input is not None: df_input_safe = neutralize_df_for_excel(df_input.copy())
