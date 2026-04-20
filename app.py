@@ -159,7 +159,6 @@ st.set_page_config(page_title=f"PMR tool ({APP_VERSION})", layout="wide")
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem !important; padding-bottom: 2rem; }
-        /* Ẩn bớt thanh Header mặc định của Streamlit để thoáng hơn */
         header[data-testid="stHeader"] {
             height: 2rem !important; 
             background-color: transparent !important;
@@ -171,41 +170,144 @@ st.markdown("""
         .stCaption { font-size: 0.7rem; margin-top: -5px; color: #555; }
         hr { margin-top: 0.5rem !important; margin-bottom: 0.5rem !important; }
         
+        /* ===== FILE UPLOADER - GIAO DIỆN HOÀN CHỈNH ===== */
         [data-testid='stFileUploader'] { margin-bottom: -30px !important; }
         [data-testid='stFileUploader'] section { padding: 0.5rem !important; min-height: 0px !important; }
         
-        /* 1. Ẩn chữ tiếng Anh mặc định (dùng lại cách cũ của bạn vì nó tương thích tốt) */
-        [data-testid='stFileUploader'] section > div > div > span { display: none; }
-        [data-testid='stFileUploader'] section small { display: none; }
-
-        /* 2. Phục hồi lại dòng chữ hướng dẫn của bạn (Có thêm tự động xuống dòng cho đẹp) */
-        [data-testid='stFileUploader'] section > div > div::after { 
-            content: "1. Xuất dữ liệu mới nhất từ PM cấp phép \\A 2. Lưu dưới dạng Excel Workbook (.xlsx) \\A 3.Nạp files dữ liệu (Tối đa 2 files)"; 
-            white-space: pre-wrap;
-            display: block; 
-            font-weight: bold; 
-            color: #333; 
-            text-align: center;
-            padding-top: 5px;
+        /* 1. XÓA SẠCH rác tiếng Anh (Drag drop, Limit 200MB...) */
+        [data-testid='stFileUploader'] section > div > div:not(:has(button)) {
+            display: none !important;
+        }
+        [data-testid='stFileUploader'] section > div > small,
+        [data-testid='stFileUploader'] section > div > span,
+        [data-testid='stFileUploader'] section > div > p {
+            display: none !important;
         }
 
-        /* 3. [QUAN TRỌNG NHẤT] Lệnh cứu lại nút X xóa file */
-        [data-testid="stUploadedFile"] span, 
-        [data-testid="stFileUploader"] button span {
+        /* 2. CHÈN HƯỚNG DẪN 3 BƯỚC (Căn lề trái thẳng tắp) */
+        [data-testid='stFileUploader'] section > div::before {
+            content: "1. Xuất dữ liệu mới nhất từ PM cấp phép \\A 2. Lưu dưới dạng Excel Workbook (.xlsx) \\A 3. Bấm Chọn Files để nạp (Tối đa 2 files)";
+            white-space: pre-wrap !important;
+            display: block !important;
+            font-weight: bold !important;
+            color: #333 !important;
+            text-align: left !important;
+            font-size: 14px !important;
+            line-height: 1.6 !important;
+            width: 100% !important;
+            margin: 0 0 10px 0 !important;
+        }
+
+        /* 3. VIỆT HÓA NÚT BẤM (Xóa Browse files -> Đổi thành Chọn File Excel) */
+        /* Bước 3.1: Tàng hình hoàn toàn chữ tiếng Anh cũ */
+        [data-testid='stFileUploader'] section button, 
+        [data-testid='stFileUploader'] section button * {
+            font-size: 0px !important; 
+            color: transparent !important;
+        }
+        /* Bước 3.2: Bơm chữ tiếng Việt vào giữa nút */
+        [data-testid='stFileUploader'] section button::after {
+            content: '📂 CHỌN FILES' !important;
+            font-size: 15px !important;
+            color: #31333F !important;
+            display: block !important;
+            visibility: visible !important;
+            font-weight: 600 !important;
+        }
+        /* ===== STYLE CHO FILE ĐÃ TẢI LÊN ===== */
+        [data-testid="stUploadedFile"] {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 12px !important;
+            padding: 10px 12px !important;
+            background-color: #f9f9f9 !important;
+            border: 1px solid #e0e0e0 !important;
+            border-radius: 6px !important;
+            margin-bottom: 8px !important;
+            margin-top: 10px !important;
+            font-size: 14px !important;
+        }
+
+        /* Hiển thị tên file - sửa font-size */
+        [data-testid="stUploadedFile"] span {
+            font-size: 14px !important;
+            display: inline !important;
+            color: #333 !important;
+        }
+
+        /* Icon file trước tên */
+        [data-testid="stUploadedFile"]::before {
+            content: "📄 " !important;
+            margin-right: 8px !important;
+            font-size: 1.1rem !important;
+        }
+
+        /* ===== STYLE NÚT DELETE (X) ===== */
+        [data-testid="stUploadedFile"] button {
             display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            min-width: 28px !important;
+            min-height: 28px !important;
+            width: 28px !important;
+            height: 28px !important;
+            padding: 0 !important;
+            background-color: #ffebee !important;
+            border: 1.5px solid #d93025 !important;
+            border-radius: 4px !important;
+            cursor: pointer !important;
+            transition: all 0.2s ease !important;
+            flex-shrink: 0 !important;
+        }
+
+        [data-testid="stUploadedFile"] button:hover {
+            background-color: #ffcdd2 !important;
+            border-color: #c5221f !important;
+            transform: scale(1.05) !important;
+        }
+
+        [data-testid="stUploadedFile"] button:active {
+            background-color: #ef5350 !important;
+            transform: scale(0.95) !important;
+        }
+
+        [data-testid="stUploadedFile"] button span {
+            display: inline-flex !important;
+            color: #d93025 !important;
+            font-weight: bold !important;
+            font-size: 1.3rem !important;
+            line-height: 1 !important;
         }
 
         div[data-testid="stColumn"] button[kind="secondary"] { color: #d93025 !important; font-weight: bold !important; border: 1px solid #ddd !important; background-color: #fff !important; width: 100%; transition: all 0.3s; }
         div[data-testid="stColumn"] button[kind="secondary"]:hover { background-color: #fce8e6 !important; border-color: #d93025 !important; color: #d93025 !important; }
-        button[kind="primary"] { font-weight: bold !important; margin-top: 5px; }
-        
+#       button[kind="primary"] { font-weight: bold !important; margin-top: 5px; }
+        /* ===== ĐỔI MÀU NÚT CHÍNH (TÍNH TẦN SỐ) SANG XANH NƯỚC BIỂN ===== */
+        button[kind="primary"] { 
+            background-color: #0068C9 !important; 
+            border-color: #0068C9 !important;
+            color: white !important;
+            font-weight: bold !important; 
+            margin-top: 5px !important; 
+            transition: all 0.3s ease !important;
+        }
+        /* Hiệu ứng khi di chuột vào (đổi sang xanh đậm hơn một chút) */
+        button[kind="primary"]:hover { 
+            background-color: #0052a3 !important; 
+            border-color: #0052a3 !important; 
+        }
+        /* Hiệu ứng khi click chuột (đổi sang xanh đậm nhất) */
+        button[kind="primary"]:active {
+            background-color: #003d7a !important;
+            border-color: #003d7a !important;
+        }        
         div[data-testid="stTable"] table { width: 100% !important; }
         div[data-testid="stTable"] th { background-color: #f0f2f6 !important; color: #31333F !important; font-size: 1.2rem !important; font-weight: 800 !important; text-align: center !important; white-space: nowrap !important; padding: 15px !important; }
         div[data-testid="stTable"] td { font-size: 1.1rem !important; text-align: center !important; vertical-align: middle !important; padding: 12px !important; min-width: 200px !important; }
         
         div[role="dialog"] { width: 50vw !important; max-width: 50vw !important; left: auto !important; right: 0 !important; top: 0 !important; bottom: 0 !important; height: 100vh !important; margin: 0 !important; border-radius: 0 !important; transform: none !important; display: flex; flex-direction: column; }
         
-        /* ĐOẠN CSS THU NHỎ POP-UP CHUYỂN ĐỔI TỌA ĐỘ (ĐÃ FIX LỖI EMOJI) */
         div[role="dialog"][aria-label*="Decimal"] {
             width: 30vw !important;             
             min-width: 400px !important;        
@@ -217,13 +319,11 @@ st.markdown("""
             transform: translate(-50%, -50%) !important; 
             border-radius: 15px !important;     
             padding-bottom: 20px !important;
-        }padding-bottom: 20px !important;
         }
 
         div[data-testid="stSelectbox"] > div, div[data-testid="stSelectbox"] button, div[data-testid="stSelectbox"] select { min-width: 60px !important; max-width: 100% !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; display: inline-block !important; }
         .stTextInput, .stSelectbox, .stNumberInput, .stDateInput { min-width: 50px !important; }
 
-        /* CSS CHO TOOLTIP HƯỚNG DẪN SỬ DỤNG */
         .tooltip-container {
           position: relative;
           display: inline-block;
