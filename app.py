@@ -156,6 +156,7 @@ def get_active_users_dict():
 st.set_page_config(page_title=f"PMR tool ({APP_VERSION})", layout="wide")
 
 # --- CSS TÙY CHỈNH (Dùng chung) ---
+# --- CSS TÙY CHỈNH (Dùng chung) ---
 st.markdown("""
     <style>
         .block-container { padding-top: 1rem !important; padding-bottom: 2rem; }
@@ -198,15 +199,14 @@ st.markdown("""
             margin: 0 0 10px 0 !important;
         }
 
-        /* 3. VIỆT HÓA NÚT BẤM (Xóa Browse files -> Đổi thành Chọn File Excel) */
-        /* Bước 3.1: Tàng hình hoàn toàn chữ tiếng Anh cũ */
-        [data-testid='stFileUploader'] section button, 
-        [data-testid='stFileUploader'] section button * {
+        /* 3. VIỆT HÓA NÚT BẤM - CHỈ NHẮM VÀO NÚT "BROWSE FILES" (Bỏ qua nút X) */
+        /* Nút Browse files là nút KHÔNG có icon SVG và KHÔNG có aria-label */
+        [data-testid='stFileUploader'] section button:not(:has(svg)):not([aria-label]), 
+        [data-testid='stFileUploader'] section button:not(:has(svg)):not([aria-label]) * {
             font-size: 0px !important; 
             color: transparent !important;
         }
-        /* Bước 3.2: Bơm chữ tiếng Việt vào giữa nút */
-        [data-testid='stFileUploader'] section button::after {
+        [data-testid='stFileUploader'] section button:not(:has(svg)):not([aria-label])::after {
             content: '📂 CHỌN FILES' !important;
             font-size: 15px !important;
             color: #31333F !important;
@@ -214,6 +214,7 @@ st.markdown("""
             visibility: visible !important;
             font-weight: 600 !important;
         }
+
         /* ===== STYLE CHO FILE ĐÃ TẢI LÊN ===== */
         [data-testid="stUploadedFile"] {
             display: flex !important;
@@ -243,8 +244,10 @@ st.markdown("""
             font-size: 1.1rem !important;
         }
 
-        /* ===== STYLE NÚT DELETE (X) ===== */
-        [data-testid="stUploadedFile"] button {
+        /* ===== STYLE NÚT DELETE (X) BẢO VỆ CHẮC CHẮN ===== */
+        /* Áp dụng cho mọi nút có icon SVG bên trong khung Upload */
+        [data-testid="stUploadedFile"] button,
+        [data-testid='stFileUploader'] section button:has(svg) {
             display: inline-flex !important;
             align-items: center !important;
             justify-content: center !important;
@@ -261,28 +264,40 @@ st.markdown("""
             flex-shrink: 0 !important;
         }
 
-        [data-testid="stUploadedFile"] button:hover {
+        [data-testid="stUploadedFile"] button:hover,
+        [data-testid='stFileUploader'] section button:has(svg):hover {
             background-color: #ffcdd2 !important;
             border-color: #c5221f !important;
             transform: scale(1.05) !important;
         }
 
-        [data-testid="stUploadedFile"] button:active {
+        [data-testid="stUploadedFile"] button:active,
+        [data-testid='stFileUploader'] section button:has(svg):active {
             background-color: #ef5350 !important;
             transform: scale(0.95) !important;
         }
 
-        [data-testid="stUploadedFile"] button span {
+        /* Phục hồi hoàn toàn icon X màu đỏ (Hủy bỏ mọi lệnh tàng hình cũ) */
+        [data-testid="stUploadedFile"] button *,
+        [data-testid='stFileUploader'] section button:has(svg) * {
             display: inline-flex !important;
             color: #d93025 !important;
             font-weight: bold !important;
-            font-size: 1.3rem !important;
+            font-size: 1.5rem !important;
             line-height: 1 !important;
+            visibility: visible !important;
+        }
+        
+        /* Chặn tuyệt đối việc bơm chữ vào nút X */
+        [data-testid="stUploadedFile"] button::after,
+        [data-testid='stFileUploader'] section button:has(svg)::after {
+            content: none !important;
+            display: none !important;
         }
 
         div[data-testid="stColumn"] button[kind="secondary"] { color: #d93025 !important; font-weight: bold !important; border: 1px solid #ddd !important; background-color: #fff !important; width: 100%; transition: all 0.3s; }
         div[data-testid="stColumn"] button[kind="secondary"]:hover { background-color: #fce8e6 !important; border-color: #d93025 !important; color: #d93025 !important; }
-#       button[kind="primary"] { font-weight: bold !important; margin-top: 5px; }
+        
         /* ===== ĐỔI MÀU NÚT CHÍNH (TÍNH TẦN SỐ) SANG XANH NƯỚC BIỂN ===== */
         button[kind="primary"] { 
             background-color: #0068C9 !important; 
@@ -292,16 +307,15 @@ st.markdown("""
             margin-top: 5px !important; 
             transition: all 0.3s ease !important;
         }
-        /* Hiệu ứng khi di chuột vào (đổi sang xanh đậm hơn một chút) */
         button[kind="primary"]:hover { 
             background-color: #0052a3 !important; 
             border-color: #0052a3 !important; 
         }
-        /* Hiệu ứng khi click chuột (đổi sang xanh đậm nhất) */
         button[kind="primary"]:active {
             background-color: #003d7a !important;
             border-color: #003d7a !important;
         }        
+        
         div[data-testid="stTable"] table { width: 100% !important; }
         div[data-testid="stTable"] th { background-color: #f0f2f6 !important; color: #31333F !important; font-size: 1.2rem !important; font-weight: 800 !important; text-align: center !important; white-space: nowrap !important; padding: 15px !important; }
         div[data-testid="stTable"] td { font-size: 1.1rem !important; text-align: center !important; vertical-align: middle !important; padding: 12px !important; min-width: 200px !important; }
@@ -357,19 +371,6 @@ st.markdown("""
           visibility: visible;
         }
         .tooltiptext strong { color: #0068C9; }
-        
-        /* ===== SỬA LỖI XUẤT HIỆN KÉP - KHÔI PHỤC NÚT X (SỨC MẠNH TỐI ĐA) ===== */
-        [data-testid="stFileUploader"] [data-testid="stUploadedFile"] button::after {
-            content: none !important;
-            display: none !important;
-        }
-        [data-testid="stFileUploader"] [data-testid="stUploadedFile"] button,
-        [data-testid="stFileUploader"] [data-testid="stUploadedFile"] button * {
-            font-size: 1.5rem !important;
-            color: #d93025 !important;
-            background-color: transparent !important;
-            visibility: visible !important;
-        }
     </style>
 """, unsafe_allow_html=True)
 
