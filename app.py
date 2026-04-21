@@ -358,16 +358,17 @@ st.markdown("""
         }
         .tooltiptext strong { color: #0068C9; }
         
-        /* ===== SỬA LỖI XUẤT HIỆN KÉP - KHÔI PHỤC NÚT X TRÊN RENDER ===== */
-        [data-testid="stUploadedFile"] button::after {
+        /* ===== SỬA LỖI XUẤT HIỆN KÉP - KHÔI PHỤC NÚT X (SỨC MẠNH TỐI ĐA) ===== */
+        [data-testid="stFileUploader"] [data-testid="stUploadedFile"] button::after {
             content: none !important;
             display: none !important;
         }
-        [data-testid="stUploadedFile"] button,
-        [data-testid="stUploadedFile"] button * {
+        [data-testid="stFileUploader"] [data-testid="stUploadedFile"] button,
+        [data-testid="stFileUploader"] [data-testid="stUploadedFile"] button * {
             font-size: 1.5rem !important;
             color: #d93025 !important;
             background-color: transparent !important;
+            visibility: visible !important;
         }
     </style>
 """, unsafe_allow_html=True)
