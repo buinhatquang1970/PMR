@@ -65,7 +65,7 @@ FREQUENCY_ALLOCATION_UHF = [
     (428.5000, 429.5000, ['LAN', 'WAN_DUPLEX'], "WAN Duplex, LAN (Note b: HCM/DN)"),
     (429.5000, 430.0000, ['LAN'], "LAN"),
     (440.0000, 440.5000, ['LAN'], "LAN"),
-    (440.5000, 441.0000, ['LAN'], "LAN (Note b: HCM)"),
+    (440.5000, 441.0000, ['LAN', 'WAN_DUPLEX'], "WAN Duplex, LAN (Note b: HCM)"),
     (441.0000, 441.2000, ['WAN_DUPLEX', 'WAN_SIMPLEX'], "WAN Duplex/Simplex"),
     (441.2000, 444.0000, ['WAN_DUPLEX'], "WAN Duplex"),
     (444.0000, 445.5000, ['WAN_SIMPLEX'], "WAN Simplex"),
