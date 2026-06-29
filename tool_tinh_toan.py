@@ -753,16 +753,43 @@ class ToolAnDinhTanSo:
                 f_tx = f_check_rounded
                 f_rx = round(f_tx + duplex_spacing, 5)
                 
-                # Check Tx
+                # =========================================================
+                # BỔ SUNG MÀNG LỌC QUY HOẠCH & DẢI CẤM CHO TẦN SỐ THU (Rx)
+                # =========================================================
+                # 1. Kiểm tra Rx có nằm trong dải phân bổ hỗ trợ không
+                allocations = config.FREQUENCY_ALLOCATION_VHF if band == 'VHF' else config.FREQUENCY_ALLOCATION_UHF
+                is_rx_allocated = False
+                for start_f, end_f, modes, _ in allocations:
+                    if start_f <= f_rx <= end_f:
+                        if mode in modes:
+                            is_rx_allocated = True
+                        break
+                if not is_rx_allocated:
+                    continue  # Nhảy sang tần số tiếp theo nếu Rx sai quy hoạch
+                
+                # 2. Kiểm tra Rx có dính dải cấm không (bao gồm cả biên bảo vệ ±25kHz)
+                is_rx_forbidden = any((r_s - 0.025) <= f_rx <= (r_e + 0.025) for r_s, r_e in getattr(config, 'FORBIDDEN_BANDS', []))
+                if is_rx_forbidden:
+                    continue  # Nhảy sang tần số tiếp theo nếu Rx rơi vào dải cấm
+
+                # 3. Kiểm tra Rx có trùng tần số dùng chung / giữ chỗ toàn quốc không
+                is_rx_shared = any(abs(f_rx - f_shared) < 0.0001 for f_shared in getattr(config, 'SHARED_FREQUENCIES', []))
+                is_rx_reserved = any(abs(f_rx - res_f) < 0.001 for res_f in getattr(self, 'reserved_frequencies', []))
+                if is_rx_shared or is_rx_reserved:
+                    continue  # Nhảy sang tần số tiếp theo nếu Rx đang bị chiếm dụng
+                # =========================================================
+                
+                # Check nhiễu khoảng cách Tx
                 tx_usable, tx_map = _eval_freq(f_tx)
                 if not tx_usable: continue
                 
-                # Check Rx
+                # Check nhiễu khoảng cách Rx
                 rx_usable, rx_map = _eval_freq(f_rx)
                 if not rx_usable: continue
                 
                 # Trộn map (Chọn k/c nhỏ nhất nếu trùng GP)
                 merged_map = {**tx_map}
+                # ... (Giữ nguyên toàn bộ phần code bên dưới từ vòng lặp for lic, dist in rx_map.items(): trở đi) ...
                 for lic, dist in rx_map.items():
                     if lic not in merged_map or dist < merged_map[lic]:
                         merged_map[lic] = dist
