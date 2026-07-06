@@ -47,6 +47,19 @@ def chuan_hoa_text(text):
     text = re.sub(r'[^a-z0-9]', '', text) 
     return text.upper()
 
+def parse_multiple_frequencies(freq_string):
+    """
+    Hàm bóc tách tất cả các tần số có trong một chuỗi.
+    Ví dụ: "419,8MHz; 419,85MHz; 152,85MHz" -> [419.8, 419.85, 152.85]
+    """
+    if pd.isna(freq_string) or str(freq_string).strip() == "":
+        return []
+    
+    cleaned_str = str(freq_string).replace(',', '.')
+    matches = re.findall(r'\b\d+\.\d+|\b\d+\b', cleaned_str)
+    
+    return [float(m) for m in matches]
+
 # ====================================================================
 # KHAI BÁO CLASS
 # ====================================================================
@@ -55,7 +68,6 @@ class ToolAnDinhTanSo:
         importlib.reload(config)
         self.reserved_frequencies = [] 
         
-        # --- HÀM KIỂM TRA ĐỊNH DẠNG TỪNG FILE TRƯỚC KHI GỘP ---
         def validate_raw_df(df_raw):
             required_groups = [
                 ["Tần số phát", "Frequency", "Freq", "Tx Freq", "Tần số"],
@@ -75,7 +87,6 @@ class ToolAnDinhTanSo:
                 if not col_found:
                     raise ValueError("File Excel thiếu các cột bắt buộc: Tần số phát (Frequency), Vĩ độ (Latitude), Kinh độ (Longitude), Tỉnh thành (Province). Vui lòng kiểm tra lại file đầu vào")
 
-        # --- HÀM ĐỌC LẺ TỪNG FILE ---
         def read_single_file(file_source):
             file_name = ""
             if hasattr(file_source, 'name'):
@@ -85,7 +96,6 @@ class ToolAnDinhTanSo:
                 
             df_temp = pd.DataFrame()
             
-            # Đọc file an toàn hơn (utf-8-sig)
             if file_name.lower().endswith('.csv'):
                 try:
                     df_temp = pd.read_csv(file_source, encoding='utf-8-sig')
@@ -97,7 +107,6 @@ class ToolAnDinhTanSo:
             
             if not df_temp.empty:
                 df_temp.columns = df_temp.columns.str.strip()
-                # Chặn lỗi ngay tại file này trước khi gộp
                 validate_raw_df(df_temp)
                 
             return df_temp
@@ -105,7 +114,6 @@ class ToolAnDinhTanSo:
         self.df = pd.DataFrame()
         
         try:
-            # KIỂM TRA & GỘP FILE
             if isinstance(uploaded_files, list):
                 dfs = []
                 for f in uploaded_files:
@@ -119,13 +127,10 @@ class ToolAnDinhTanSo:
                 if hasattr(uploaded_files, 'seek'): uploaded_files.seek(0)
                 self.df = read_single_file(uploaded_files)
             
-            # SAU KHI GỘP XONG -> CHẠY LOGIC XỬ LÝ
             if not self.df.empty:
                 self.map_columns_smart()
-
                 if hasattr(self, 'validate_required_columns'):
                     self.validate_required_columns()
-
                 self.clean_data()
             else:
                 raise ValueError("File Excel rỗng hoặc không đọc được dữ liệu.")
@@ -286,7 +291,8 @@ class ToolAnDinhTanSo:
                 raw_prov_extracted = parts[-1] if len(parts) > 0 else str(row.get('raw_address', ''))
             
             clean_prov = chuan_hoa_text(raw_prov_extracted)
-            is_holding = "LUUDONGTOANQUOC" in clean_prov
+            
+            is_holding = any(kw in clean_prov for kw in ["LUUDONGTOANQUOC", "LUUDONGMIENBAC", "LUUDONGMIENTRUNG", "LUUDONGMIENNAM"])
             
             tx_freqs = self.parse_freq_string(row.get('raw_freq')) if has_freq_col else []
             rx_freqs = self.parse_freq_string(row.get('raw_freq_rx')) if 'raw_freq_rx' in self.df.columns else []
@@ -320,6 +326,7 @@ class ToolAnDinhTanSo:
                 cleaned_rows.append({
                     "freq": f, 
                     "bw": bw, 
+                    "raw_emission": str(row.get('raw_bw', '')).upper(),
                     "lat": lat if lat else 0, 
                     "lon": lon if lon else 0,
                     "has_coords": has_coords, 
@@ -329,6 +336,7 @@ class ToolAnDinhTanSo:
                     "license": license_str,
                     "customer": customer_str
                 })
+                
         self.df = pd.DataFrame(cleaned_rows)
 
     def xac_dinh_kich_ban_user(self, user_input):
@@ -392,7 +400,7 @@ class ToolAnDinhTanSo:
         return row_delta.get(key_rx, 0.0)
 
     # =========================================================================
-    # HÀM 1: KIỂM TRA TẦN SỐ CỤ THỂ (ĐÃ NÂNG CẤP DUPLEX)
+    # HÀM 1: KIỂM TRA TẦN SỐ CỤ THỂ 
     # =========================================================================
     def kiem_tra_tan_so_cu_the(self, user_input, f_check):
         if self.df.empty: 
@@ -407,7 +415,6 @@ class ToolAnDinhTanSo:
         band = user_input['band']
         bw = user_input['bw']
 
-        # Gói logic cũ của bạn vào 1 hàm con để gọi 2 lần nếu là Duplex
         def _check_one_freq(f_val):
             f_val_rounded = round(f_val, 5)
             
@@ -416,16 +423,16 @@ class ToolAnDinhTanSo:
             found_band = False
             allowed_for_freq = []
             
-            for start_f, end_f, modes, _ in allocations:
+            for start_f, end_f, modes_alloc, _ in allocations:
                 if start_f <= f_val_rounded <= end_f:
                     found_band = True
-                    allowed_for_freq = modes
-                    if user_input['usage_mode'] in modes:
+                    allowed_for_freq = modes_alloc
+                    if user_input['usage_mode'] in modes_alloc:
                         is_allocated_mode = True
                     break
                     
             if not found_band:
-                 return "FAIL", f"Tần số {f_val_rounded} nằm ngoài dải phân bổ VHF/UHF hỗ trợ.", []
+                 return "FAIL", f"Tần số {f_val_rounded:.5f} nằm ngoài dải phân bổ VHF/UHF hỗ trợ.", []
             if not is_allocated_mode:
                 return "FAIL", f"Tần số được quy hoạch cho {allowed_for_freq}, KHÔNG cấp cho {user_input['usage_mode']}.", []
 
@@ -433,15 +440,15 @@ class ToolAnDinhTanSo:
             if is_forbidden:
                  return "FAIL", f"Tần số không khả dụng: {reason}", []
 
-            is_forbidden = any((r_s - 0.025) <= f_val_rounded <= (r_e + 0.025) for r_s, r_e in config.FORBIDDEN_BANDS)
+            is_forbidden = any((r_s - 0.025) <= f_val_rounded <= (r_e + 0.025) for r_s, r_e in getattr(config, 'FORBIDDEN_BANDS', []))
             if is_forbidden:
                 return "FAIL", "Tần số nằm trong dải tần CẤM (bao gồm biên bảo vệ ±25kHz).", []
 
-            is_shared = any(abs(f_val_rounded - f_shared) < 0.0001 for f_shared in config.SHARED_FREQUENCIES)
+            is_shared = any(abs(f_val_rounded - f_shared) < 0.0001 for f_shared in getattr(config, 'SHARED_FREQUENCIES', []))
             if is_shared:
                 return "FAIL", "Tần số thuộc kênh DÙNG CHUNG.", []
 
-            for res_f in self.reserved_frequencies:
+            for res_f in getattr(self, 'reserved_frequencies', []):
                 if abs(f_val_rounded - res_f) < 0.001:
                     return "FAIL", f"Vướng tần số giữ chỗ/Lưu động toàn quốc (Tần số: {res_f}).", []
 
@@ -449,16 +456,48 @@ class ToolAnDinhTanSo:
             df_subset = self.df[np.abs(self.df['freq'] - f_val_rounded) < 0.035]
             
             for _, row in df_subset.iterrows():
-                if row['is_holding'] or not row['has_coords']: continue 
+                delta_f = abs(f_val_rounded - row['freq']) * 1000 
+                
+                # LUỒNG 1: GIẤY PHÉP LƯU ĐỘNG / GIỮ CHỖ
+                if row.get('is_holding', False):
+                    emission = str(row.get('raw_emission', '')).upper()
+                    if '50K' in emission:
+                        guard_band = 43.75
+                    elif '16K' in emission:
+                        guard_band = 31.25
+                    else:
+                        guard_band = 31.25  
+                        
+                    if delta_f <= guard_band:
+                        conflicts.append({
+                            "license": row['license'],
+                            "customer": row.get('customer', ''), 
+                            "freq_conflict": f"{row['freq']:.5f}",
+                            "dist_km": 0.0,
+                            "req_dist_km": 0.0,
+                            "address": row.get('province', '') + " (Lưu động/Giữ chỗ)",
+                            "type": f"Vi phạm biên bảo vệ (±{guard_band} kHz)"
+                        })
+                    continue 
+
+                # LUỒNG 2: GIẤY PHÉP CỐ ĐỊNH
+                if not row.get('has_coords', False): 
+                    continue 
+                    
                 try:
                     dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
-                except: continue
+                except: 
+                    continue
                 
-                delta_f = abs(f_val_rounded - row['freq']) * 1000 
                 rx_bw = row['bw']
                 db_net_type = row['net_type'] 
                 
-                req_dist = self.get_required_distance(band, user_mode_tuple, db_net_type, bw, delta_f, rx_bw)
+                actual_user_mode = user_mode_tuple
+                if "LAN" in user_mode_tuple[0]:
+                    if (418.5 <= f_val_rounded <= 419.5) or (428.5 <= f_val_rounded <= 429.5):
+                        actual_user_mode = ("WAN_DUPLEX", "WAN_DUPLEX")
+                
+                req_dist = self.get_required_distance(band, actual_user_mode, db_net_type, bw, delta_f, rx_bw)
                 
                 if dist_km < req_dist:
                     if delta_f < 3: int_type = "Đồng kênh"
@@ -469,11 +508,10 @@ class ToolAnDinhTanSo:
                     else: int_type = f"Lệch {delta_f:.2f} kHz"
 
                     conflict_coords = f"{row['lat']:.4f}, {row['lon']:.4f}"
-                    
                     conflicts.append({
                         "license": row['license'],
                         "customer": row.get('customer', ''), 
-                        "freq_conflict": row['freq'],
+                        "freq_conflict": f"{row['freq']:.5f}",
                         "dist_km": round(dist_km, 2),
                         "req_dist_km": req_dist,
                         "address": row.get('province', '') + f" (Toạ độ: {conflict_coords})",
@@ -481,8 +519,8 @@ class ToolAnDinhTanSo:
                     })
 
             if len(conflicts) > 0:
-                return "FAIL", f"Tần số {f_val_rounded} MHz có thể gây nhiễu. Vui lòng kiểm tra lại", conflicts
-            return "OK", f"Tần số {f_val_rounded} MHz khả dụng", []
+                return "FAIL", f"Tần số {f_val_rounded:.5f} MHz có thể gây nhiễu. Vui lòng kiểm tra lại", conflicts
+            return "OK", f"Tần số {f_val_rounded:.5f} MHz khả dụng", []
 
         if is_duplex:
             f_tx = round(f_check, 5)
@@ -493,11 +531,11 @@ class ToolAnDinhTanSo:
             
             all_conflicts = conf_tx + conf_rx
             if st_tx == "OK" and st_rx == "OK":
-                return {"status": "OK", "msg": f"Cặp tần số {f_tx:.4f} / {f_rx:.4f} MHz khả dụng"}
+                return {"status": "OK", "msg": f"Cặp tần số {f_tx:.5f} / {f_rx:.5f} MHz khả dụng"}
             else:
                 err_msgs = []
-                if st_tx != "OK": err_msgs.append(f"[Tx {f_tx:.4f}] {msg_tx}")
-                if st_rx != "OK": err_msgs.append(f"[Rx {f_rx:.4f}] {msg_rx}")
+                if st_tx != "OK": err_msgs.append(f"[Tx {f_tx:.5f}] {msg_tx}")
+                if st_rx != "OK": err_msgs.append(f"[Rx {f_rx:.5f}] {msg_rx}")
                 return {"status": "FAIL", "msg": " | ".join(err_msgs), "conflicts": all_conflicts}
         else:
             st, msg, conf = _check_one_freq(f_check)
@@ -548,7 +586,7 @@ class ToolAnDinhTanSo:
         return False, ""
 
     # =========================================================================
-    # HÀM 2: TÌM CÁC TẦN SỐ KHÔNG KHẢ DỤNG (ĐÃ NÂNG CẤP DUPLEX)
+    # HÀM 2: TÌM CÁC TẦN SỐ KHÔNG KHẢ DỤNG 
     # =========================================================================
     def tim_cac_tan_so_khong_kha_dung(self, user_input):
         if self.df.empty: return []
@@ -576,16 +614,48 @@ class ToolAnDinhTanSo:
             df_subset = self.df[np.abs(self.df['freq'] - f_val_rounded) < 0.035]
             
             for _, row in df_subset.iterrows():
-                if row['is_holding'] or not row['has_coords']: continue 
+                delta_f = abs(f_val_rounded - row['freq']) * 1000 
+                
+                # 1. LUỒNG LƯU ĐỘNG / GIỮ CHỖ
+                if row.get('is_holding', False):
+                    emission = str(row.get('raw_emission', '')).upper()
+                    if '50K' in emission:
+                        guard_band = 43.75
+                    elif '16K' in emission:
+                        guard_band = 31.25
+                    else:
+                        guard_band = 31.25
+                        
+                    if delta_f <= guard_band:
+                        local_bads.append({
+                            "Tần số (MHz)": f"{f_val_rounded:.5f}",
+                            "Số GP bị nhiễu": row['license'],
+                            "Tên Khách Hàng": row.get('customer', ''), 
+                            "Tần số trạm bị nhiễu (MHz)": f"{row['freq']:.5f}",
+                            "Loại nhiễu": f"Vi phạm biên bảo vệ (±{guard_band} kHz)",
+                            "Khoảng cách thực tế (km)": 0.0,
+                            "Khoảng cách yêu cầu (km)": 0.0,
+                            "Địa chỉ trạm bị nhiễu": row.get('province', '') + " (Lưu động/Giữ chỗ)"
+                        })
+                    continue 
+
+                # 2. LUỒNG CỐ ĐỊNH
+                if not row.get('has_coords', False): 
+                    continue 
                 try:
                     dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
-                except: continue
+                except: 
+                    continue
                 
-                delta_f = abs(f_val_rounded - row['freq']) * 1000 
                 rx_bw = row['bw']
                 db_net_type = row['net_type'] 
                 
-                req_dist = self.get_required_distance(band, user_mode_tuple, db_net_type, bw, delta_f, rx_bw)
+                actual_user_mode = user_mode_tuple
+                if "LAN" in user_mode_tuple[0]:
+                    if (418.5 <= f_val_rounded <= 419.5) or (428.5 <= f_val_rounded <= 429.5):
+                        actual_user_mode = ("WAN_DUPLEX", "WAN_DUPLEX")
+                
+                req_dist = self.get_required_distance(band, actual_user_mode, db_net_type, bw, delta_f, rx_bw)
                 
                 if dist_km < req_dist:
                     if delta_f < 3: int_type = "Đồng kênh"
@@ -596,10 +666,10 @@ class ToolAnDinhTanSo:
                     else: int_type = f"Lệch {delta_f:.2f} kHz"
                     
                     local_bads.append({
-                        "Tần số (MHz)": f_val_rounded,
+                        "Tần số (MHz)": f"{f_val_rounded:.5f}",
                         "Số GP bị nhiễu": row['license'],
                         "Tên Khách Hàng": row.get('customer', ''), 
-                        "Tần số trạm bị nhiễu (MHz)": row['freq'],
+                        "Tần số trạm bị nhiễu (MHz)": f"{row['freq']:.5f}",
                         "Loại nhiễu": int_type,
                         "Khoảng cách thực tế (km)": round(dist_km, 2),
                         "Khoảng cách yêu cầu (km)": req_dist,
@@ -616,7 +686,6 @@ class ToolAnDinhTanSo:
             else:
                 bad_results.extend(_get_bad_for_freq(f_check))
 
-        # Loại bỏ trùng lặp nếu cả Tx và Rx đều nhiễu cùng 1 GP
         unique_bads = []
         seen = set()
         for b in bad_results:
@@ -627,6 +696,9 @@ class ToolAnDinhTanSo:
                 
         return unique_bads
 
+    # =========================================================================
+    # HÀM TẠO DANH SÁCH TẦN SỐ (ĐÃ THÊM LƯỚI TỰ ĐỘNG CĂN CHỈNH - GRID ALIGNMENT)
+    # =========================================================================
     def generate_candidates(self, band, bw, usage_mode, user_province_clean, scan_start=0, scan_end=0):
         candidates = []
         allocations = config.FREQUENCY_ALLOCATION_VHF if band == 'VHF' else config.FREQUENCY_ALLOCATION_UHF
@@ -636,12 +708,23 @@ class ToolAnDinhTanSo:
         allowed_group_2 = ['HOCHIMINH', 'TPHOCHIMINH', 'HCM']
 
         for start_f, end_f, modes, _ in allocations:
-            if (end_f < scan_start) or (start_f > scan_end):
+            if (end_f < scan_start) or (start_f > scan_end and scan_end != 0):
                 continue
                 
             if usage_mode in modes:
-                loop_start = max(start_f, scan_start)
-                loop_end = min(end_f, scan_end)
+                # BỘ LỌC CHỐNG SAI SỐ TỪ GIAO DIỆN UI:
+                # Ép thông số scan_start bị làm tròn từ Streamlit về lại đúng chuẩn lưới (grid)
+                if scan_start > start_f:
+                    steps = round((scan_start - start_f) / step_mhz)
+                    loop_start = start_f + steps * step_mhz
+                else:
+                    loop_start = start_f
+
+                if 0 < scan_end < end_f:
+                    steps_end = round((scan_end - start_f) / step_mhz)
+                    loop_end = start_f + steps_end * step_mhz
+                else:
+                    loop_end = end_f
                 
                 curr = loop_start
                 while curr <= loop_end + 0.00001:
@@ -674,7 +757,7 @@ class ToolAnDinhTanSo:
         return candidates
 
     # =========================================================================
-    # HÀM 3: TÍNH TOÁN QUÉT TẦN SỐ (ĐÃ NÂNG CẤP DUPLEX)
+    # HÀM 3: TÍNH TOÁN QUÉT TẦN SỐ
     # =========================================================================
     def tinh_toan(self, user_input):
         if self.df.empty: return []
@@ -700,28 +783,48 @@ class ToolAnDinhTanSo:
 
         priority_bands = getattr(config, 'MARITIME_PRIORITY_BANDS', [])
 
-        # Hàm con đóng gói nguyên bản vòng lặp check nhiễu của bạn
         def _eval_freq(f_val):
             f_val_rounded = round(f_val, 5)
             df_subset = self.df[np.abs(self.df['freq'] - f_val_rounded) < 0.035]
             
-            # --- Check nhiễu (Khoảng cách < Yêu cầu) ---
             for _, row in df_subset.iterrows():
-                if row['is_holding'] or not row['has_coords']: continue 
+                delta_f = abs(f_val_rounded - row['freq']) * 1000 
+                
+                # 1. LUỒNG LƯU ĐỘNG / GIỮ CHỖ
+                if row.get('is_holding', False):
+                    emission = str(row.get('raw_emission', '')).upper()
+                    if '50K' in emission:
+                        guard_band = 43.75
+                    elif '16K' in emission:
+                        guard_band = 31.25
+                    else:
+                        guard_band = 31.25
+                        
+                    if delta_f <= guard_band:
+                        return False, {} 
+                    continue 
+
+                # 2. LUỒNG CỐ ĐỊNH
+                if not row.get('has_coords', False): 
+                    continue 
+                    
                 try:
                     dist_km = geodesic((user_input['lat'], user_input['lon']), (row['lat'], row['lon'])).km
-                except: continue
+                except: 
+                    continue
                 
-                delta_f = abs(f_val_rounded - row['freq']) * 1000 
                 rx_bw = row['bw']
                 db_net_type = row['net_type'] 
                 
-                req_dist = self.get_required_distance(band, user_mode_tuple, db_net_type, bw, delta_f, rx_bw)
+                actual_user_mode = user_mode_tuple
+                if "LAN" in user_mode_tuple[0]:
+                    if (418.5 <= f_val_rounded <= 419.5) or (428.5 <= f_val_rounded <= 429.5):
+                        actual_user_mode = ("WAN_DUPLEX", "WAN_DUPLEX")
                 
+                req_dist = self.get_required_distance(band, actual_user_mode, db_net_type, bw, delta_f, rx_bw)
                 if dist_km < req_dist:
                     return False, {} 
             
-            # --- Tần số khả dụng -> Build danh sách giấy phép ---
             df_exact = self.df[np.abs(self.df['freq'] - f_val_rounded) < 0.00001]
             lic_dist_map = {} 
 
@@ -730,7 +833,6 @@ class ToolAnDinhTanSo:
                 if raw_lic.lower() in ['nan', 'none', '', 'nan/gp']: continue
                 
                 short_lic = raw_lic.split('/')[0]
-                
                 d_km = 0
                 if row_e['has_coords']:
                     try:
@@ -745,7 +847,6 @@ class ToolAnDinhTanSo:
                         
             return True, lic_dist_map
 
-        # Vòng lặp chính
         for f_check in candidates:
             f_check_rounded = round(f_check, 5)
             
@@ -753,43 +854,14 @@ class ToolAnDinhTanSo:
                 f_tx = f_check_rounded
                 f_rx = round(f_tx + duplex_spacing, 5)
                 
-                # =========================================================
-                # BỔ SUNG MÀNG LỌC QUY HOẠCH & DẢI CẤM CHO TẦN SỐ THU (Rx)
-                # =========================================================
-                # 1. Kiểm tra Rx có nằm trong dải phân bổ hỗ trợ không
-                allocations = config.FREQUENCY_ALLOCATION_VHF if band == 'VHF' else config.FREQUENCY_ALLOCATION_UHF
-                is_rx_allocated = False
-                for start_f, end_f, modes, _ in allocations:
-                    if start_f <= f_rx <= end_f:
-                        if mode in modes:
-                            is_rx_allocated = True
-                        break
-                if not is_rx_allocated:
-                    continue  # Nhảy sang tần số tiếp theo nếu Rx sai quy hoạch
-                
-                # 2. Kiểm tra Rx có dính dải cấm không (bao gồm cả biên bảo vệ ±25kHz)
-                is_rx_forbidden = any((r_s - 0.025) <= f_rx <= (r_e + 0.025) for r_s, r_e in getattr(config, 'FORBIDDEN_BANDS', []))
-                if is_rx_forbidden:
-                    continue  # Nhảy sang tần số tiếp theo nếu Rx rơi vào dải cấm
-
-                # 3. Kiểm tra Rx có trùng tần số dùng chung / giữ chỗ toàn quốc không
-                is_rx_shared = any(abs(f_rx - f_shared) < 0.0001 for f_shared in getattr(config, 'SHARED_FREQUENCIES', []))
-                is_rx_reserved = any(abs(f_rx - res_f) < 0.001 for res_f in getattr(self, 'reserved_frequencies', []))
-                if is_rx_shared or is_rx_reserved:
-                    continue  # Nhảy sang tần số tiếp theo nếu Rx đang bị chiếm dụng
-                # =========================================================
-                
-                # Check nhiễu khoảng cách Tx
                 tx_usable, tx_map = _eval_freq(f_tx)
                 if not tx_usable: continue
                 
-                # Check nhiễu khoảng cách Rx
                 rx_usable, rx_map = _eval_freq(f_rx)
                 if not rx_usable: continue
                 
                 # Trộn map (Chọn k/c nhỏ nhất nếu trùng GP)
                 merged_map = {**tx_map}
-                # ... (Giữ nguyên toàn bộ phần code bên dưới từ vòng lặp for lic, dist in rx_map.items(): trở đi) ...
                 for lic, dist in rx_map.items():
                     if lic not in merged_map or dist < merged_map[lic]:
                         merged_map[lic] = dist
@@ -809,7 +881,7 @@ class ToolAnDinhTanSo:
                         break
 
                 results.append({
-                    "frequency": f"{f_tx:.4f} / {f_rx:.4f}", 
+                    "frequency": f"{f_tx:.5f} / {f_rx:.5f}", 
                     "reuse_factor": int(unique_count),
                     "license_list": license_str,
                     "is_priority": is_priority 
@@ -833,7 +905,8 @@ class ToolAnDinhTanSo:
                             break
 
                     results.append({
-                        "frequency": f_check_rounded, 
+                        # Đã cập nhật thành String ép định dạng để tránh Streamlit làm tròn
+                        "frequency": f"{f_check_rounded:.5f}", 
                         "reuse_factor": int(unique_count),
                         "license_list": license_str,
                         "is_priority": is_priority 

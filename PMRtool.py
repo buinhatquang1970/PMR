@@ -786,7 +786,7 @@ else:
     st.subheader("3. KIỂM TRA TẦN SỐ CỤ THỂ")
     c_check_1, c_check_2 = st.columns([1.0, 4.0]) 
     with c_check_1:
-        f_check_val = st.number_input("Nhập tần số (MHz):", value=0.0, step=0.0125, format="%.4f")
+        f_check_val = st.number_input("Nhập tần số (MHz):", value=0.0, step=0.00625, format="%.5f")
     with c_check_2:
         st.markdown(" ") 
         st.markdown(" ")
@@ -1050,7 +1050,7 @@ else:
                     "Tên Khách Hàng": st.column_config.TextColumn(width="large"), 
                     "Địa chỉ trạm bị nhiễu": st.column_config.TextColumn(width="medium"),
                     "Khoảng cách thực tế/Chỉ tiêu": st.column_config.TextColumn(width="medium", label="K.Cách Thực tế/Chỉ tiêu (km)"),
-                    "Tần số (MHz)": st.column_config.NumberColumn(format="%.4f"),
+                    "Tần số (MHz)": st.column_config.NumberColumn(format="%.5f"),
                     "Tần số trạm bị nhiễu (MHz)": st.column_config.NumberColumn(format="%.4f"),
                 }
             )
