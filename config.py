@@ -29,13 +29,13 @@ FREQUENCY_ALLOCATION_VHF = [
     (155.0500, 155.6000, ['LAN'], "LAN"),
     (155.6000, 156.0125, ['WAN_SIMPLEX', 'WAN_DUPLEX'], "WAN Simplex/Duplex"),
     (156.0125, 156.4375, ['WAN_SIMPLEX'], "WAN Simplex"),
+    (160.4375, 160.6000, ['LAN'], "LAN"),
     
     # VTN 5B - Hàng hải (Ưu tiên)
     (156.4375, 156.4875, ['LAN'], "LAN (Hàng hải ưu tiên)"),
     (156.5625, 156.7625, ['LAN'], "LAN (Hàng hải ưu tiên)"),
     (156.8375, 157.4375, ['LAN', 'WAN_SIMPLEX'], "LAN, WAN Simplex (Hàng hải ưu tiên)"),
     
-    (160.4375, 160.6000, ['LAN'], "LAN"),
     (160.6000, 160.9750, ['LAN'], "LAN (Hàng hải ưu tiên)"),
     (160.9750, 161.4750, ['LAN'], "LAN"),
     (161.4750, 161.5250, ['LAN'], "LAN (Hàng hải ưu tiên)"),
@@ -45,7 +45,7 @@ FREQUENCY_ALLOCATION_VHF = [
     (162.0375, 162.0500, ['WAN_DUPLEX'], "WAN Duplex (Hàng hải ưu tiên)"),
     
     (162.0500, 165.0000, ['WAN_DUPLEX'], "WAN Duplex"),
-    (165.0000, 166.0000, ['LAN', 'WAN_DUPLEX'], "LAN, WAN Duplex"),
+    (165.0000, 166.0000, ['LAN'], "LAN"),
     (166.0000, 167.0000, ['WAN_SIMPLEX'], "WAN Simplex"),
     (167.0000, 170.0000, ['WAN_DUPLEX'], "WAN Duplex"),
     (170.0000, 171.0000, ['LAN', 'WAN_SIMPLEX'], "LAN, WAN Simplex"),
@@ -66,16 +66,15 @@ FREQUENCY_ALLOCATION_UHF = [
     (429.5000, 430.0000, ['LAN'], "LAN"),
     (440.0000, 440.5000, ['LAN'], "LAN"),
     (440.5000, 441.0000, ['LAN', 'WAN_DUPLEX'], "WAN Duplex, LAN (Note b: HCM)"),
-    (441.0000, 441.2000, ['WAN_DUPLEX', 'WAN_SIMPLEX'], "WAN Duplex/Simplex"),
+    (441.0000, 441.2000, ['WAN_SIMPLEX'], "WAN Simplex"),
     (441.2000, 444.0000, ['WAN_DUPLEX'], "WAN Duplex"),
     (444.0000, 445.5000, ['WAN_SIMPLEX'], "WAN Simplex"),
-    (445.5000, 446.0000, ['LAN', 'WAN_DUPLEX'], "WAN Duplex, LAN (Note b: HCM)"),
+    (445.5000, 446.0000, ['WAN_DUPLEX'], "WAN Duplex"),
     (446.2000, 449.0000, ['WAN_DUPLEX'], "WAN Duplex"),
     (449.0000, 450.0000, ['LAN'], "LAN"),
     (450.0000, 450.5000, ['LAN'], "LAN"),
     (457.3700, 457.4750, ['LAN'], "LAN"),
-    (461.4750, 463.0800, ['LAN'], "LAN"),
-    (467.3700, 470.0000, ['LAN'], "LAN"),
+    
 ]
 
 # =============================================================================
