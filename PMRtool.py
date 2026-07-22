@@ -723,7 +723,7 @@ else:
 
     with col_layout_right:
         st.subheader("2. NẠP DỮ LIỆU ĐẦU VÀO")
-        uploaded_files = st.file_uploader("Label ẩn", type=None, label_visibility="collapsed", accept_multiple_files=True)
+        uploaded_files = st.file_uploader("Label ẩn", type=["xlsx"], label_visibility="collapsed", accept_multiple_files=True)
         
         btn_disabled = True 
         if uploaded_files:
