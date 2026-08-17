@@ -22,7 +22,6 @@ FREQUENCY_ALLOCATION_VHF = [
     (149.0000, 149.4000, ['LAN', 'WAN_SIMPLEX'], "LAN, WAN Simplex"),
     (149.4000, 149.9000, ['LAN', 'WAN_SIMPLEX'], "LAN, WAN Simplex"),
     (150.0500, 151.4375, ['WAN_DUPLEX'], "WAN Duplex"),
-    (152.4375, 153.0000, ['WAN_SIMPLEX'], "WAN Simplex"),
     (153.0000, 154.0000, ['LAN'], "LAN"),
     (154.0000, 154.9000, ['WAN_DUPLEX'], "WAN Duplex"),
     (154.9000, 155.0500, ['WAN_SIMPLEX'], "WAN Simplex"),
