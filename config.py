@@ -55,10 +55,12 @@ FREQUENCY_ALLOCATION_VHF = [
 FREQUENCY_ALLOCATION_UHF = [
     (406.2000, 409.0000, ['LAN'], "LAN"),
     (409.0000, 410.0000, ['WAN_SIMPLEX'], "WAN Simplex"),
+    (410.0000, 415.0000, ['WAN_DUPLEX'], "Trunking B10mb"),
     (415.0000, 415.5000, ['LAN'], "LAN"),
     (415.5000, 418.5000, ['LAN', 'WAN_DUPLEX'], "LAN, WAN Duplex"),
     (418.5000, 419.5000, ['LAN', 'WAN_DUPLEX'], "WAN Duplex, LAN (Note b: HCM/DN)"),
     (419.5000, 420.0000, ['WAN_SIMPLEX'], "WAN Simplex"),
+    (420.0000, 425.0000, ['WAN_DUPLEX'], "Trunking B10mb"),
     (425.0000, 425.5000, ['WAN_SIMPLEX'], "WAN Simplex"),
     (425.5000, 428.5000, ['LAN', 'WAN_DUPLEX'], "LAN, WAN Duplex"),
     (428.5000, 429.5000, ['LAN', 'WAN_DUPLEX'], "WAN Duplex, LAN (Note b: HCM/DN)"),
