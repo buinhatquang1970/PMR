@@ -21,17 +21,16 @@ FREQUENCY_ALLOCATION_VHF = [
     (147.0000, 149.0000, ['WAN_DUPLEX'], "WAN Duplex"),
     (149.0000, 149.4000, ['LAN', 'WAN_SIMPLEX'], "LAN, WAN Simplex"),
     (149.4000, 149.9000, ['LAN', 'WAN_SIMPLEX'], "LAN, WAN Simplex"),
-    (150.0500, 151.4375, ['WAN_DUPLEX'], "WAN Duplex"),
-    (153.0000, 154.0000, ['LAN'], "LAN"),
-    (154.0000, 154.9000, ['WAN_DUPLEX'], "WAN Duplex"),
-    (154.9000, 155.0500, ['WAN_SIMPLEX'], "WAN Simplex"),
-    (155.0500, 155.6000, ['LAN'], "LAN"),
-    (155.6000, 156.0125, ['WAN_SIMPLEX', 'WAN_DUPLEX'], "WAN Simplex/Duplex"),
+#   (150.0500, 151.4375, ['WAN_DUPLEX'], "WAN Duplex"),
+#   (154.0000, 154.9000, ['WAN_DUPLEX'], "WAN Duplex"),
+#   (154.9000, 155.0500, ['WAN_SIMPLEX'], "WAN Simplex"),
+#   (155.0500, 155.6000, ['LAN'], "LAN"),
+#   (155.6000, 156.0125, ['WAN_SIMPLEX', 'WAN_DUPLEX'], "WAN Simplex/Duplex"),
     (156.0125, 156.4375, ['WAN_SIMPLEX'], "WAN Simplex"),
     (160.4375, 160.6000, ['LAN'], "LAN"),
     
     # VTN 5B - Hàng hải (Ưu tiên)
-    (156.4375, 156.4875, ['LAN'], "LAN (Hàng hải ưu tiên)"),
+#   (156.4375, 156.4875, ['LAN'], "LAN (Hàng hải ưu tiên)"),
     (156.5625, 156.7625, ['LAN'], "LAN (Hàng hải ưu tiên)"),
     (156.8375, 157.4375, ['LAN', 'WAN_SIMPLEX'], "LAN, WAN Simplex (Hàng hải ưu tiên)"),
     
