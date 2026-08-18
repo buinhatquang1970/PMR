@@ -699,6 +699,12 @@ class ToolAnDinhTanSo:
     # =========================================================================
     # HÀM TẠO DANH SÁCH TẦN SỐ (ĐÃ THÊM LƯỚI TỰ ĐỘNG CĂN CHỈNH - GRID ALIGNMENT)
     # =========================================================================
+    # =========================================================================
+    # HÀM TẠO DANH SÁCH TẦN SỐ (ĐÃ BỔ SUNG LOGIC RIÊNG CHO TRUNKING 410-415)
+    # =========================================================================
+    # =========================================================================
+    # HÀM TẠO DANH SÁCH TẦN SỐ (CHỈ CĂN CHỈNH LƯỚI CHO TRUNKING 410-415)
+    # =========================================================================
     def generate_candidates(self, band, bw, usage_mode, user_province_clean, scan_start=0, scan_end=0):
         candidates = []
         allocations = config.FREQUENCY_ALLOCATION_VHF if band == 'VHF' else config.FREQUENCY_ALLOCATION_UHF
@@ -712,19 +718,38 @@ class ToolAnDinhTanSo:
                 continue
                 
             if usage_mode in modes:
-                # BỘ LỌC CHỐNG SAI SỐ TỪ GIAO DIỆN UI:
-                # Ép thông số scan_start bị làm tròn từ Streamlit về lại đúng chuẩn lưới (grid)
-                if scan_start > start_f:
-                    steps = round((scan_start - start_f) / step_mhz)
-                    loop_start = start_f + steps * step_mhz
-                else:
-                    loop_start = start_f
+                # --- CHỈ BẮT ĐÚNG DẢI TRUNKING 410-415 ---
+                is_trunking_410 = (usage_mode == 'WAN_DUPLEX' and abs(start_f - 410.0) < 0.0001 and abs(end_f - 415.0) < 0.0001)
 
-                if 0 < scan_end < end_f:
-                    steps_end = round((scan_end - start_f) / step_mhz)
-                    loop_end = start_f + steps_end * step_mhz
+                if is_trunking_410:
+                    current_step_mhz = 0.025  # Ép cứng bước nhảy 25kHz
+                    base_f = 410.0125         # Neo gốc lưới đúng 410.0125
+                    
+                    if scan_start > base_f:
+                        steps = round((scan_start - base_f) / current_step_mhz)
+                        loop_start = base_f + steps * current_step_mhz
+                    else:
+                        loop_start = base_f
+                        
+                    if 0 < scan_end < end_f:
+                        steps_end = round((scan_end - base_f) / current_step_mhz)
+                        loop_end = base_f + steps_end * current_step_mhz
+                    else:
+                        loop_end = 414.9875   # Điểm dừng cố định
                 else:
-                    loop_end = end_f
+                    # TẤT CẢ CÁC TRƯỜNG HỢP KHÁC: GIỮ NGUYÊN LOGIC CŨ
+                    current_step_mhz = step_mhz
+                    if scan_start > start_f:
+                        steps = round((scan_start - start_f) / current_step_mhz)
+                        loop_start = start_f + steps * current_step_mhz
+                    else:
+                        loop_start = start_f
+
+                    if 0 < scan_end < end_f:
+                        steps_end = round((scan_end - start_f) / current_step_mhz)
+                        loop_end = start_f + steps_end * current_step_mhz
+                    else:
+                        loop_end = end_f
                 
                 curr = loop_start
                 while curr <= loop_end + 0.00001:
@@ -749,7 +774,7 @@ class ToolAnDinhTanSo:
 
                     if not is_forbidden and not skip_by_note_b and not is_reserved_excel:
                         candidates.append(curr_rounded)
-                    curr += step_mhz
+                    curr += current_step_mhz
         
         candidates = sorted(list(set(candidates)))
         if len(candidates) > MAX_CANDIDATES:

@@ -706,7 +706,19 @@ else:
 
         with c_bw:
             st.markdown("**Băng thông**")
-            bw = st.selectbox("Băng thông", [6.25, 12.5, 25.0], index=1, label_visibility="collapsed")
+            # --- LOGIC ĐỘNG CHO DROPDOWN BĂNG THÔNG ---
+            is_trunking_410 = False
+            
+            # Sửa lại tên biến: dùng `mode` thay vì `usage_mode` và `selected_subband_label` thay vì `scan_range`
+            if mode == "WAN_DUPLEX" and "410" in str(selected_subband_label) and "415" in str(selected_subband_label):
+                is_trunking_410 = True
+
+            if is_trunking_410:
+                # Nếu là dải Trunking đặc biệt, chỉ cho phép chọn 25.0
+                bw = st.selectbox("Băng thông (kHz)", [25.0], label_visibility="collapsed")
+            else:
+                # Các trường hợp còn lại giữ nguyên danh sách cũ
+                bw = st.selectbox("Băng thông", [6.25, 12.5, 25.0], index=1, label_visibility="collapsed")
         
         c_prov, c_qty, c_space = st.columns([1.2, 0.8, 3.0], gap="small")
         with c_prov:
