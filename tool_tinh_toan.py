@@ -221,7 +221,7 @@ class ToolAnDinhTanSo:
     def parse_bandwidth(self, emission_code):
         if pd.isna(emission_code): return 12.5
         code = str(emission_code).upper()
-        if "16K" in code: return 25.0
+        if "16K" in code or "22K" in code: return 25.0
         if "11K" in code or "8K5" in code: return 12.5
         if "4K0" in code: return 6.25
         return 12.5
